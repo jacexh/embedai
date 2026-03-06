@@ -1,0 +1,17 @@
+// shared/proto/episode.proto
+syntax = "proto3";
+package embedai.v1;
+option go_package = "github.com/embedai/datahub/shared/proto;proto";
+
+message EpisodeIngestedEvent {
+  string episode_id = 1;
+  string project_id = 2;
+  string storage_path = 3;
+  string format = 4;  // mcap | hdf5
+}
+
+message EpisodeReadyEvent {
+  string episode_id = 1;
+  float quality_score = 2;
+  int32 topic_count = 3;
+}

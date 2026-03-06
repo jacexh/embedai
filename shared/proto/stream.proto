@@ -1,0 +1,25 @@
+// shared/proto/stream.proto
+syntax = "proto3";
+package embedai.v1;
+option go_package = "github.com/embedai/datahub/shared/proto;proto";
+
+service StreamIngestion {
+  rpc OpenStream(stream StreamFrame) returns (stream StreamAck);
+}
+
+message StreamFrame {
+  string session_id = 1;
+  string project_id = 2;
+  string robot_id = 3;
+  uint64 seq_num = 4;
+  int64 timestamp_ns = 5;
+  string topic = 6;
+  bytes payload = 7;
+  bool is_last = 8;
+}
+
+message StreamAck {
+  uint64 last_ack_seq = 1;
+  string episode_id = 2;
+  string status = 3;  // ok | reconnect | error
+}
