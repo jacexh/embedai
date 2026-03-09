@@ -3,16 +3,21 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Use Docker's internal DNS resolver; valid=30s defers re-resolution
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
     # Proxy auth endpoints to gateway
     location /auth/ {
-        proxy_pass ${GATEWAY_URL}/auth/;
+        set $upstream ${GATEWAY_URL};
+        proxy_pass $upstream/auth/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     # Proxy REST API to gateway
     location /api/v1/ {
-        proxy_pass ${GATEWAY_URL}/api/v1/;
+        set $upstream ${GATEWAY_URL};
+        proxy_pass $upstream/api/v1/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         # Support large file uploads (10GB)

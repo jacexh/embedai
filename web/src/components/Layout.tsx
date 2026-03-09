@@ -3,6 +3,7 @@ import { useAuthStore } from "@/store/auth";
 
 const NAV_ITEMS = [
   { to: "/episodes", label: "数据录制" },
+  { to: "/upload", label: "上传" },
   { to: "/tasks", label: "标注任务" },
   { to: "/datasets", label: "数据集" },
   { to: "/export", label: "导出" },

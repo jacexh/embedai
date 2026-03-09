@@ -16,6 +16,8 @@ type Config struct {
 	MinioBucketEpisodes string
 	JWTSecret           string
 	JWTExpireHours      int
+	DatasetServiceURL   string
+	TaskServiceURL      string
 }
 
 func Load() *Config {
@@ -31,6 +33,8 @@ func Load() *Config {
 		MinioBucketEpisodes: getEnv("MINIO_BUCKET_EPISODES", "episodes"),
 		JWTSecret:           mustEnv("JWT_SECRET"),
 		JWTExpireHours:      expHours,
+		DatasetServiceURL:   getEnv("DATASET_SERVICE_URL", "http://localhost:8100"),
+		TaskServiceURL:      getEnv("TASK_SERVICE_URL", "http://localhost:8200"),
 	}
 }
 

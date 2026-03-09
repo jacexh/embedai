@@ -65,6 +65,11 @@ func main() {
 	authHandler := handler.NewAuthHandler(userRepo, cfg.JWTSecret, cfg.JWTExpireHours)
 	uploadHandler := handler.NewUploadHandler(episodeRepo, minioStorage, pub)
 
+	proxyHandler, err := handler.NewProxyHandler(cfg.DatasetServiceURL, cfg.TaskServiceURL)
+	if err != nil {
+		log.Fatalf("failed to init proxy handler: %v", err)
+	}
+
 	r := gin.Default()
 
 	r.GET("/healthz", func(c *gin.Context) {
@@ -94,6 +99,10 @@ func main() {
 			upload.PUT("/:session_id/chunk/:n", uploadHandler.UploadChunk)
 			upload.POST("/:session_id/complete", uploadHandler.Complete)
 		}
+
+		// Reverse-proxy all other /api/v1/* requests to dataset-service or task-service.
+		// Gin's radix tree matches the explicit upload routes above before this wildcard.
+		api.Any("/*path", proxyHandler.Handle)
 	}
 
 	// ── gRPC server ───────────────────────────────────────────────────────

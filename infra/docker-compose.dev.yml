@@ -1,0 +1,98 @@
+# Development compose: infra + Python backend services with hot-reload.
+# Gateway and web are run on the host:
+#   gateway:  go run ./services/gateway  (port 8000)
+#   web:      cd web && npm run dev       (port 5173)
+#
+# Usage: make dev-services
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: embedai
+      POSTGRES_USER: embedai
+      POSTGRES_PASSWORD: embedai_dev
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U embedai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - minio_data:/data
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    ports: ["8080:8080"]
+    environment:
+      DJANGO_DB: default
+      POSTGRE_NAME: labelstudio
+      POSTGRE_USER: embedai
+      POSTGRE_PASSWORD: embedai_dev
+      POSTGRE_PORT: 5432
+      POSTGRE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Python backend services with hot-reload ──────────────────────────────
+  dataset-service:
+    build:
+      context: ../services/dataset-service
+      dockerfile: Dockerfile
+    # Mount only the app package; .venv stays inside the image layer
+    volumes:
+      - ../services/dataset-service/app:/app/app
+    environment:
+      DATASET_DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+      DATASET_JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      DATASET_REDIS_URL: redis://redis:6379/0
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8100:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  task-service:
+    build:
+      context: ../services/task-service
+      dockerfile: Dockerfile
+    volumes:
+      - ../services/task-service/app:/app/app
+    environment:
+      TASK_DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+      TASK_JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      TASK_REDIS_URL: redis://redis:6379/0
+      TASK_GATEWAY_URL: http://host.docker.internal:8000
+      TASK_LABEL_STUDIO_URL: http://label-studio:8080
+      TASK_LABEL_STUDIO_API_KEY: ${LABEL_STUDIO_API_KEY:-placeholder}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8200:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  minio_data:

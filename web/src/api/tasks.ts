@@ -3,45 +3,47 @@ import { apiClient } from "./client";
 
 export interface AnnotationTask {
   id: string;
-  episode_id: string;
-  assignee_id: string | null;
-  assignee_name: string | null;
-  status: "pending" | "in_progress" | "completed" | "rejected";
+  project_id: string;
+  episode_id: string | null;
+  dataset_version_id: string | null;
+  type: string;
+  guideline_url: string | null;
+  required_skills: string[];
+  deadline: string | null;
+  status: "created" | "assigned" | "submitted" | "approved" | "rejected";
+  assigned_to: string | null;
   label_studio_task_id: number | null;
-  label_studio_url: string | null;
-  created_at: string;
-  updated_at: string;
-  episode?: { filename: string; quality_score: number };
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
-export interface Annotator {
+export interface UserWorkload {
   id: string;
   name: string;
   email: string;
+  role: string;
+  skill_tags: string[];
   pending_task_count: number;
 }
 
 export interface TaskFilters {
   status?: string;
-  assignee_id?: string;
-  page?: number;
-  page_size?: number;
+  assigned_to?: string;
 }
 
-export function useTasks(filters: TaskFilters) {
+export function useTasks(filters: TaskFilters = {}) {
   return useQuery({
     queryKey: ["tasks", filters],
     queryFn: async () => {
       const params = new URLSearchParams(
         Object.fromEntries(
           Object.entries(filters)
-            .filter(([, v]) => v != null)
+            .filter(([, v]) => v != null && v !== "")
             .map(([k, v]) => [k, String(v)])
         )
       );
-      const { data } = await apiClient.get<{ items: AnnotationTask[]; total: number }>(
-        `/annotation-tasks?${params}`
-      );
+      const { data } = await apiClient.get<AnnotationTask[]>(`/tasks?${params}`);
       return data;
     },
   });
@@ -49,9 +51,11 @@ export function useTasks(filters: TaskFilters) {
 
 export function useAnnotatorsWithWorkload() {
   return useQuery({
-    queryKey: ["annotators", "workload"],
+    queryKey: ["users", "workload"],
     queryFn: async () => {
-      const { data } = await apiClient.get<Annotator[]>("/users?role=annotator&include_workload=true");
+      const { data } = await apiClient.get<UserWorkload[]>(
+        "/users?role=annotator&include_workload=true"
+      );
       return data;
     },
   });
@@ -60,8 +64,8 @@ export function useAnnotatorsWithWorkload() {
 export function useAssignTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, assigneeId }: { taskId: string; assigneeId: string }) =>
-      apiClient.put(`/annotation-tasks/${taskId}/assign`, { assignee_id: assigneeId }),
+    mutationFn: ({ taskId, userId }: { taskId: string; userId: string }) =>
+      apiClient.post(`/tasks/${taskId}/assign`, { user_id: userId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
   });
 }
@@ -70,7 +74,27 @@ export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (episodeId: string) =>
-      apiClient.post("/annotation-tasks", { episode_id: episodeId }),
+      apiClient.post<AnnotationTask>("/tasks", {
+        episode_id: episodeId,
+        type: "video_annotation",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+  });
+}
+
+export function useApproveTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => apiClient.post(`/tasks/${taskId}/approve`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+  });
+}
+
+export function useRejectTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, comment }: { taskId: string; comment?: string }) =>
+      apiClient.post(`/tasks/${taskId}/reject`, { comment }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
   });
 }

@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useEpisodes } from "@/api/episodes";
+import { useEpisodes, useDeleteEpisode } from "@/api/episodes";
 import { useCreateTask } from "@/api/tasks";
 import { EpisodeCard } from "@/components/EpisodeCard";
+import { EpisodeDetailModal } from "@/components/EpisodeDetailModal";
 import { Spinner } from "@/components/Spinner";
 import { Pagination } from "@/components/Pagination";
+import { toast } from "@/store/toast";
 
 const STATUS_OPTIONS = [
   { value: "", label: "全部状态" },
@@ -24,6 +26,7 @@ export function EpisodesPage() {
   const [format, setFormat] = useState("");
   const [minQuality, setMinQuality] = useState(0);
   const [page, setPage] = useState(1);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const pageSize = 12;
 
   const { data, isLoading, isError } = useEpisodes({
@@ -35,13 +38,23 @@ export function EpisodesPage() {
   });
 
   const createTask = useCreateTask();
+  const deleteEpisode = useDeleteEpisode();
 
   const handleCreateTask = async (episodeId: string) => {
     try {
       await createTask.mutateAsync(episodeId);
-      alert("标注任务已创建");
+      toast.success("标注任务已创建");
     } catch {
-      alert("创建失败，请重试");
+      // error toast shown by apiClient interceptor
+    }
+  };
+
+  const handleDelete = async (episodeId: string) => {
+    try {
+      await deleteEpisode.mutateAsync(episodeId);
+      toast.success("已删除");
+    } catch {
+      // error toast shown by apiClient interceptor
     }
   };
 
@@ -95,12 +108,24 @@ export function EpisodesPage() {
       ) : isError ? (
         <div className="text-center text-red-500 py-12">加载失败，请刷新重试</div>
       ) : data?.items.length === 0 ? (
-        <div className="text-center text-gray-400 py-12">暂无数据</div>
+        <div className="text-center text-gray-400 py-12">
+          <p className="text-lg mb-2">暂无数据</p>
+          <p className="text-sm">
+            请先{" "}
+            <a href="/upload" className="text-blue-600 hover:underline">上传录制文件</a>
+          </p>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {data?.items.map((ep) => (
-              <EpisodeCard key={ep.id} episode={ep} onCreateTask={handleCreateTask} />
+              <EpisodeCard
+                key={ep.id}
+                episode={ep}
+                onCreateTask={handleCreateTask}
+                onDelete={handleDelete}
+                onDetail={setDetailId}
+              />
             ))}
           </div>
           <Pagination
@@ -110,6 +135,14 @@ export function EpisodesPage() {
             onChange={setPage}
           />
         </>
+      )}
+
+      {/* Detail Modal */}
+      {detailId && (
+        <EpisodeDetailModal
+          episodeId={detailId}
+          onClose={() => setDetailId(null)}
+        />
       )}
     </div>
   );

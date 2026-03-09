@@ -7,6 +7,8 @@ import { EpisodesPage } from "@/pages/EpisodesPage";
 import { TasksPage } from "@/pages/TasksPage";
 import { DatasetsPage } from "@/pages/DatasetsPage";
 import { ExportPage } from "@/pages/ExportPage";
+import { UploadPage } from "@/pages/UploadPage";
+import { ToastContainer } from "@/components/ToastContainer";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +28,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ToastContainer />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -38,6 +41,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="/episodes" replace />} />
             <Route path="episodes" element={<EpisodesPage />} />
+            <Route path="upload" element={<UploadPage />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="export" element={<ExportPage />} />

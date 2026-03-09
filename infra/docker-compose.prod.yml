@@ -71,8 +71,15 @@ services:
       JWT_EXPIRE_HOURS: "24"
       GATEWAY_PORT: "8000"
       GRPC_PORT: "9090"
+      DATASET_SERVICE_URL: http://dataset-service:8000
+      TASK_SERVICE_URL: http://task-service:8000
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     depends_on:
       postgres:
         condition: service_healthy
@@ -193,6 +200,9 @@ services:
       GATEWAY_URL: http://gateway:8000
     ports:
       - "3000:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
     deploy:
       resources:
         limits:
