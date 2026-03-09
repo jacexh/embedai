@@ -1,0 +1,35 @@
+stateDiagram-v2
+    [*] --> CREATED : 数据工程师定义任务
+
+    CREATED --> ASSIGNED : 分配给标注员
+    CREATED --> CANCELLED : 取消任务
+
+    ASSIGNED --> IN_PROGRESS : 标注员开始工作
+    ASSIGNED --> CREATED : 取消分配\n重新进入待分配
+
+    IN_PROGRESS --> SUBMITTED : 标注员提交
+    IN_PROGRESS --> ASSIGNED : 标注员放弃\n返回待分配
+
+    SUBMITTED --> REVIEWING : 审核员接单
+    SUBMITTED --> IN_PROGRESS : 自动打回\n(超过截止日期)
+
+    REVIEWING --> APPROVED : 审核通过
+    REVIEWING --> REJECTED : 审核驳回\n附反馈
+
+    REJECTED --> IN_PROGRESS : 返回修改\n版本号 +1
+
+    APPROVED --> [*] : 标注结果可用
+
+    CANCELLED --> [*]
+
+    note right of SUBMITTED
+        外包标注员提交后
+        数据访问权限收回
+    end note
+
+    note right of APPROVED
+        触发事件:
+        - AnnotationApproved
+        - 通知数据集策划模块
+        - 更新 IAA 统计
+    end note

@@ -1,0 +1,68 @@
+flowchart TD
+    classDef event fill:#ff9800,stroke:#e65100,color:#000
+    classDef command fill:#2196f3,stroke:#0d47a1,color:#fff
+    classDef actor fill:#ffeb3b,stroke:#f57f17,color:#000
+    classDef system fill:#9c27b0,stroke:#4a148c,color:#fff
+    classDef aggregate fill:#4caf50,stroke:#1b5e20,color:#fff
+    classDef hotspot fill:#f44336,stroke:#b71c1c,color:#fff
+
+    %% ── 路径 A: 批量文件上传 ──
+    Robot[机器人 / 操作员]:::actor
+    CmdInit[初始化分块上传\n文件名/大小/格式]:::command
+    EvtUploadInit[上传会话已创建]:::event
+    CmdUploadChunk[上传分块\nchunk N/Total]:::command
+    EvtChunkReceived[分块已接收]:::event
+    CmdComplete[完成上传]:::command
+    EvtFileAssembled[文件已组装]:::event
+
+    Robot --> CmdInit
+    CmdInit --> EvtUploadInit
+    EvtUploadInit --> CmdUploadChunk
+    CmdUploadChunk --> EvtChunkReceived
+    EvtChunkReceived -->|更多分块| CmdUploadChunk
+    EvtChunkReceived -->|全部完成| CmdComplete
+    CmdComplete --> EvtFileAssembled
+
+    %% ── 路径 B: 实时流式接入 ──
+    Robot2[机器人\n实时运行]:::actor
+    CmdStreamOpen[建立流式连接\ngRPC stream]:::command
+    EvtStreamOpened[流连接已建立]:::event
+    CmdWriteFrame[写入帧数据\nMCAP Message]:::command
+    EvtFrameBuffered[帧已缓冲]:::event
+    CmdStreamClose[关闭流]:::command
+    EvtStreamSealed[流数据已封存\n→ 生成 MCAP 文件]:::event
+    HotBuffer[? 断线重连\n数据连续性策略?]:::hotspot
+
+    Robot2 --> CmdStreamOpen
+    CmdStreamOpen --> EvtStreamOpened
+    EvtStreamOpened --> CmdWriteFrame
+    CmdWriteFrame --> EvtFrameBuffered
+    EvtFrameBuffered -->|持续写入| CmdWriteFrame
+    EvtFrameBuffered -.question.- HotBuffer
+    CmdStreamClose --> EvtStreamSealed
+
+    %% ── 合流: 处理流水线 ──
+    EvtFileAssembled --> PipelineTrigger
+    EvtStreamSealed --> PipelineTrigger
+
+    PipelineTrigger[触发处理流水线]:::command
+
+    EvtStoredRaw[原始文件已存储\n对象存储]:::event
+    EvtHashVerified[完整性校验通过\nMD5/SHA256]:::event
+    EvtMetaExtracted[元数据已提取]:::event
+    EvtTopicsIndexed[Topics/Channels 已索引\n含时间范围、帧率、传感器类型]:::event
+    EvtThumbnailGen[预览帧已生成]:::event
+    EvtQualityScored[质量评分完成]:::event
+    EvtEpisodeReady[Episode 状态 → READY]:::event
+    AggEpisode[Episode Aggregate\nid / format / duration\ntopics / quality_score\nstatus / project_id]:::aggregate
+    HotQuality[? 质量评分维度:\n帧率稳定性? 传感器缺失? 曝光?]:::hotspot
+
+    PipelineTrigger --> EvtStoredRaw
+    EvtStoredRaw --> EvtHashVerified
+    EvtHashVerified --> EvtMetaExtracted
+    EvtMetaExtracted --> EvtTopicsIndexed
+    EvtTopicsIndexed --> EvtThumbnailGen
+    EvtThumbnailGen --> EvtQualityScored
+    EvtQualityScored -.question.- HotQuality
+    EvtQualityScored --> EvtEpisodeReady
+    EvtEpisodeReady --> AggEpisode

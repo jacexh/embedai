@@ -1,0 +1,37 @@
+stateDiagram-v2
+    [*] --> UPLOADING : 上传会话创建 / 流连接建立
+
+    UPLOADING --> PROCESSING : 文件组装完成 / 流封存
+    UPLOADING --> FAILED : 上传超时 / 校验失败
+
+    PROCESSING --> READY : 元数据提取 + 质量评分通过
+    PROCESSING --> FAILED : 流水线异常 / 格式损坏
+
+    READY --> ANNOTATING : 纳入标注任务
+    READY --> IN_DATASET : 直接加入数据集\n(无需标注)
+    READY --> ARCHIVED : 手动归档
+
+    ANNOTATING --> READY : 所有关联任务完成
+    ANNOTATING --> IN_DATASET : 标注审核通过\n→ 可纳入版本
+
+    IN_DATASET --> ARCHIVED : 数据集版本冻结后\n原始数据转冷存储
+
+    FAILED --> [*] : 删除 / 重新上传
+
+    note right of PROCESSING
+        触发动作:
+        - 存储原始文件
+        - MD5 校验
+        - MCAP/HDF5 解析
+        - Topic 索引
+        - 生成预览帧
+        - 质量评分
+    end note
+
+    note right of READY
+        数据变更:
+        - status = READY
+        - quality_score 写入
+        - topics 已索引
+        - 可被搜索和检索
+    end note

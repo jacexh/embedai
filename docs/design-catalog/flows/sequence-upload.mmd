@@ -1,0 +1,33 @@
+sequenceDiagram
+    actor Robot as 机器人/操作员
+    participant API as API Gateway<br/>(Golang)
+    participant UploadSvc as Upload Service<br/>(Golang)
+    participant ObjStore as 对象存储<br/>(MinIO/S3)
+    participant Pipeline as 处理流水线<br/>(Python Worker)
+    participant MetaDB as 元数据 DB<br/>(PostgreSQL)
+
+    Robot->>API: POST /episodes/upload/init<br/>{filename, size, format, checksum}
+    API->>MetaDB: 创建 Episode (status=UPLOADING)<br/>创建 UploadSession
+    API-->>Robot: {episode_id, session_id, chunk_size}
+
+    loop 每个分块 (1-10GB 文件 / ~64MB chunk)
+        Robot->>API: PUT /episodes/upload/{session_id}/chunk/{n}<br/>{chunk_data}
+        API->>UploadSvc: 转发分块
+        UploadSvc->>ObjStore: 写入临时分块
+        UploadSvc->>MetaDB: 更新 received_chunks
+        API-->>Robot: 200 OK {received: n}
+    end
+
+    Robot->>API: POST /episodes/upload/{session_id}/complete
+    API->>UploadSvc: 触发组装
+    UploadSvc->>ObjStore: 合并分块 → 正式文件路径
+    UploadSvc->>MetaDB: UploadSession status=COMPLETED<br/>Episode status=PROCESSING
+    UploadSvc->>Pipeline: 发布消息 EpisodeIngested {episode_id}
+    API-->>Robot: 202 Accepted {episode_id, status: "processing"}
+
+    Pipeline->>ObjStore: 读取 MCAP/HDF5 文件
+    Pipeline->>Pipeline: 校验 MD5 / 解析格式<br/>提取 Topics + 时间范围<br/>生成预览帧<br/>计算质量评分
+    Pipeline->>MetaDB: 写入 Topic 记录<br/>更新 Episode metadata<br/>Episode status=READY
+    Pipeline-->>API: 事件 EpisodeReady {episode_id}
+
+    Note over Robot,MetaDB: 断点续传: Robot 可携带 session_id 续传未完成分块

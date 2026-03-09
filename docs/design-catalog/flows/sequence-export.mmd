@@ -1,0 +1,36 @@
+sequenceDiagram
+    actor MLE as 算法工程师
+    participant API as API Gateway<br/>(Golang)
+    participant DatasetSvc as Dataset Service<br/>(Python)
+    participant ExportWorker as Export Worker<br/>(Python, 异步)
+    participant ObjStore as 内部对象存储
+    participant CloudStore as 云端对象存储<br/>(S3 兼容)
+    participant MetaDB as 元数据 DB
+
+    MLE->>API: POST /datasets/{id}/versions<br/>{episode_filter, annotation_filter, version_tag}
+    API->>DatasetSvc: 创建 DatasetVersion (不可变快照)
+    DatasetSvc->>MetaDB: 写入 DatasetVersion<br/>{episode_refs, is_immutable=true}
+    API-->>MLE: {version_id, episode_count, total_size_estimate}
+
+    MLE->>API: POST /export-jobs<br/>{version_id, format, target_bucket, target_prefix}
+    API->>MetaDB: 创建 ExportJob (status=PENDING)
+    API-->>MLE: {job_id}
+    API->>ExportWorker: 异步触发 ExportJob {job_id}
+
+    loop 每个 Episode (并行处理)
+        ExportWorker->>MetaDB: 读取 episode_ref + clip_range
+        ExportWorker->>ObjStore: 按时间范围提取 MCAP 切片<br/>或 HDF5 dataset slice
+        ExportWorker->>MetaDB: 读取关联 Annotation
+        ExportWorker->>ExportWorker: 合并标注到文件\n格式转换 (WebDataset shard / HF parquet)
+        ExportWorker->>CloudStore: 上传转换后文件
+        ExportWorker->>MetaDB: 更新 ExportJob.progress_pct
+    end
+
+    ExportWorker->>ExportWorker: 生成 manifest.json<br/>{file_list, checksums, schema, episode_count}
+    ExportWorker->>CloudStore: 上传 manifest.json
+    ExportWorker->>MetaDB: ExportJob status=COMPLETED<br/>manifest_url 写入
+
+    MLE->>API: GET /export-jobs/{job_id}
+    API-->>MLE: {status: "completed", manifest_url, stats}
+
+    Note over ExportWorker,CloudStore: 大数据集分批并行: N个 Episode 并发处理<br/>失败自动重试单个 Episode, 不影响整体任务

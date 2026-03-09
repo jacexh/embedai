@@ -1,0 +1,75 @@
+flowchart TD
+    classDef event fill:#ff9800,stroke:#e65100,color:#000
+    classDef command fill:#2196f3,stroke:#0d47a1,color:#fff
+    classDef actor fill:#ffeb3b,stroke:#f57f17,color:#000
+    classDef system fill:#9c27b0,stroke:#4a148c,color:#fff
+    classDef aggregate fill:#4caf50,stroke:#1b5e20,color:#fff
+    classDef hotspot fill:#f44336,stroke:#b71c1c,color:#fff
+
+    DataEng[数据工程师]:::actor
+    Annotator[标注员\n内部/外包]:::actor
+    Reviewer[审核员]:::actor
+    AnnoTool[标注工具\n前端 Web App]:::system
+
+    %% ── 任务配置 ──
+    CmdDefineTask[定义标注任务\n类型/Episodes/时间窗口\n标注指南/截止日期]:::command
+    EvtTaskDefined[标注任务已定义]:::event
+    AggTask[AnnotationTask\nid / type / episodes\nguideline / deadline\nstatus / assignee]:::aggregate
+
+    DataEng --> CmdDefineTask
+    CmdDefineTask --> EvtTaskDefined
+    EvtTaskDefined --> AggTask
+
+    %% ── 分配 ──
+    CmdAssign[分配给标注员\n支持手动/自动轮询]:::command
+    EvtAssigned[任务已分配]:::event
+    HotAssign[? 自动分配策略:\n负载均衡? 技能匹配?]:::hotspot
+
+    AggTask --> CmdAssign
+    DataEng --> CmdAssign
+    CmdAssign --> EvtAssigned
+    EvtAssigned -.question.- HotAssign
+    EvtAssigned --> Annotator
+
+    %% ── 标注执行 ──
+    CmdLoadData[加载任务数据\n流式读取指定时间段]:::command
+    EvtDataLoaded[数据已加载到标注工具]:::event
+    CmdAnnotate[执行标注\n2D框/关键点/片段标记/多模态关联]:::command
+    EvtDraftSaved[草稿已保存]:::event
+    CmdSubmit[提交标注]:::command
+    EvtSubmitted[标注已提交\n等待审核]:::event
+    AggAnnotation[Annotation\nid / task_id / episode_id\ntime_range / labels\nannotator_id / version]:::aggregate
+
+    Annotator --> CmdLoadData
+    CmdLoadData --> EvtDataLoaded
+    EvtDataLoaded --> AnnoTool
+    AnnoTool --> CmdAnnotate
+    CmdAnnotate --> EvtDraftSaved
+    EvtDraftSaved -->|继续标注| CmdAnnotate
+    Annotator --> CmdSubmit
+    CmdSubmit --> EvtSubmitted
+    EvtSubmitted --> AggAnnotation
+
+    %% ── 审核 ──
+    CmdStartReview[开始审核]:::command
+    EvtReviewStarted[审核已开始]:::event
+    CmdApprove[通过标注]:::command
+    CmdReject[驳回标注\n附反馈意见]:::command
+    EvtApproved[标注已通过\n→ 可纳入数据集]:::event
+    EvtRejected[标注已驳回\n→ 返回修改]:::event
+
+    Reviewer --> CmdStartReview
+    AggAnnotation --> CmdStartReview
+    CmdStartReview --> EvtReviewStarted
+    Reviewer --> CmdApprove
+    Reviewer --> CmdReject
+    CmdApprove --> EvtApproved
+    CmdReject --> EvtRejected
+    EvtRejected -->|重新分配| CmdAssign
+
+    %% ── 质控聚合 ──
+    EvtIAAComputed[标注一致性计算完成\nInter-Annotator Agreement]:::event
+    HotIAA[? IAA 是否必要?\n当前外包规模多大?]:::hotspot
+
+    EvtApproved --> EvtIAAComputed
+    EvtIAAComputed -.question.- HotIAA

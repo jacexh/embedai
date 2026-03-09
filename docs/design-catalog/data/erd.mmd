@@ -1,0 +1,128 @@
+erDiagram
+    PROJECT {
+        uuid id PK
+        string name
+        string description
+        timestamp created_at
+    }
+
+    USER {
+        uuid id PK
+        string name
+        string email
+        enum role "admin|engineer|annotator_internal|annotator_outsource"
+        uuid project_id FK
+    }
+
+    EPISODE {
+        uuid id PK
+        uuid project_id FK
+        string filename
+        enum format "mcap|hdf5"
+        bigint size_bytes
+        float duration_seconds
+        enum status "uploading|processing|ready|failed|archived"
+        float quality_score
+        jsonb metadata "sensors, topics, frame_count, etc."
+        string storage_path
+        timestamp recorded_at
+        timestamp ingested_at
+    }
+
+    TOPIC {
+        uuid id PK
+        uuid episode_id FK
+        string name "e.g. /camera/rgb, /lidar/points"
+        enum type "image|pointcloud|imu|force|joint_state|other"
+        float start_time_offset
+        float end_time_offset
+        int message_count
+        float frequency_hz
+    }
+
+    DATASET {
+        uuid id PK
+        uuid project_id FK
+        string name
+        string description
+        enum status "draft|published|deprecated"
+        timestamp created_at
+        uuid created_by FK
+    }
+
+    DATASET_VERSION {
+        uuid id PK
+        uuid dataset_id FK
+        string version_tag "e.g. v1.0.0"
+        jsonb episode_refs "array of {episode_id, clip_range, topic_filter}"
+        int episode_count
+        bigint total_size_bytes
+        bool is_immutable
+        timestamp created_at
+    }
+
+    ANNOTATION_TASK {
+        uuid id PK
+        uuid project_id FK
+        uuid dataset_version_id FK
+        enum type "bbox2d|keypoint|segment|timeline|multimodal"
+        string guideline_url
+        timestamp deadline
+        enum status "created|assigned|in_progress|submitted|reviewing|approved|rejected"
+        uuid assigned_to FK
+        uuid created_by FK
+    }
+
+    ANNOTATION {
+        uuid id PK
+        uuid task_id FK
+        uuid episode_id FK
+        uuid annotator_id FK
+        float time_start
+        float time_end
+        jsonb labels "type-specific label payload"
+        int version
+        enum status "draft|submitted|approved|rejected"
+        string reviewer_comment
+        timestamp submitted_at
+    }
+
+    EXPORT_JOB {
+        uuid id PK
+        uuid dataset_version_id FK
+        uuid triggered_by FK
+        enum format "raw|webdataset|hf_datasets"
+        string target_bucket
+        string target_prefix
+        enum status "pending|running|completed|failed"
+        float progress_pct
+        string manifest_url
+        timestamp started_at
+        timestamp completed_at
+    }
+
+    UPLOAD_SESSION {
+        uuid id PK
+        uuid episode_id FK
+        uuid initiated_by FK
+        int total_chunks
+        int received_chunks
+        enum status "in_progress|assembling|completed|expired"
+        string checksum_expected
+        timestamp expires_at
+    }
+
+    PROJECT ||--o{ USER : "has"
+    PROJECT ||--o{ EPISODE : "contains"
+    PROJECT ||--o{ DATASET : "owns"
+    PROJECT ||--o{ ANNOTATION_TASK : "scopes"
+    EPISODE ||--o{ TOPIC : "has"
+    EPISODE ||--o{ UPLOAD_SESSION : "created_via"
+    EPISODE ||--o{ ANNOTATION : "annotated_in"
+    DATASET ||--o{ DATASET_VERSION : "versioned_by"
+    DATASET_VERSION ||--o{ ANNOTATION_TASK : "defines_scope_for"
+    DATASET_VERSION ||--o{ EXPORT_JOB : "exported_via"
+    ANNOTATION_TASK ||--o{ ANNOTATION : "produces"
+    USER ||--o{ ANNOTATION_TASK : "assigned_to"
+    USER ||--o{ ANNOTATION : "creates"
+    USER ||--o{ EXPORT_JOB : "triggers"

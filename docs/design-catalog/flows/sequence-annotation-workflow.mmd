@@ -1,0 +1,57 @@
+sequenceDiagram
+    actor DE as 数据工程师
+    actor Ann as 标注员
+    actor Rev as 审核员
+    participant API as API Gateway<br/>(Golang)
+    participant TaskSvc as Task Service<br/>(Python)
+    participant AnnoTool as 标注工具<br/>(React Frontend)
+    participant StreamSvc as 数据流服务<br/>(Golang)
+    participant ObjStore as 对象存储
+    participant MetaDB as 元数据 DB
+
+    DE->>API: POST /tasks {type, episode_ids,<br/>time_ranges, guideline, deadline}
+    API->>TaskSvc: 创建 AnnotationTask
+    TaskSvc->>MetaDB: 写入 Task (status=CREATED)
+    API-->>DE: {task_id}
+
+    DE->>API: POST /tasks/{id}/assign {user_id}
+    API->>TaskSvc: 分配任务
+    TaskSvc->>MetaDB: Task status=ASSIGNED
+    TaskSvc-->>Ann: 通知: 新任务已分配
+
+    Ann->>AnnoTool: 打开任务
+    AnnoTool->>API: GET /tasks/{id}/data-token
+    API->>StreamSvc: 生成时限访问令牌<br/>(含 episode_id + time_range)
+    API-->>AnnoTool: {stream_token, expires_in}
+
+    AnnoTool->>StreamSvc: 流式请求指定时间段数据<br/>GET /stream/{episode_id}?t=0-30s
+    StreamSvc->>ObjStore: 按时间范围读取 MCAP 切片
+    StreamSvc-->>AnnoTool: 流式返回帧数据\n(Camera/LiDAR/IMU 同步)
+
+    loop 标注循环
+        Ann->>AnnoTool: 绘制标注 (框/关键点/时序标记)
+        AnnoTool->>API: POST /annotations/draft (自动保存)
+        API->>MetaDB: 保存草稿
+    end
+
+    Ann->>AnnoTool: 提交标注
+    AnnoTool->>API: POST /annotations/submit {task_id, labels}
+    API->>TaskSvc: 更新 Task status=SUBMITTED
+    API->>MetaDB: 写入 Annotation (status=SUBMITTED)
+    API-->>Ann: 200 OK
+
+    Rev->>API: GET /tasks?status=submitted
+    API-->>Rev: [task list]
+    Rev->>AnnoTool: 审核模式查看标注
+    AnnoTool->>StreamSvc: 同上, 叠加标注图层显示
+
+    alt 审核通过
+        Rev->>API: POST /tasks/{id}/approve
+        API->>TaskSvc: Task status=APPROVED
+        API->>MetaDB: Annotation status=APPROVED
+        TaskSvc-->>DE: 事件: AnnotationApproved
+    else 审核驳回
+        Rev->>API: POST /tasks/{id}/reject {comment}
+        API->>TaskSvc: Task status=REJECTED
+        TaskSvc-->>Ann: 通知: 任务被驳回 + 反馈
+    end

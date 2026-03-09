@@ -1,0 +1,70 @@
+flowchart TD
+    classDef event fill:#ff9800,stroke:#e65100,color:#000
+    classDef command fill:#2196f3,stroke:#0d47a1,color:#fff
+    classDef actor fill:#ffeb3b,stroke:#f57f17,color:#000
+    classDef system fill:#9c27b0,stroke:#4a148c,color:#fff
+    classDef aggregate fill:#4caf50,stroke:#1b5e20,color:#fff
+    classDef hotspot fill:#f44336,stroke:#b71c1c,color:#fff
+
+    MLEng[算法工程师]:::actor
+    DataEng[数据工程师]:::actor
+    CloudStorage[云对象存储\nS3 兼容]:::system
+    TrainingPlatform[云端训练平台]:::system
+
+    %% ── 数据集策划 ──
+    CmdSearch[搜索/过滤 Episodes\n按场景/时长/质量分/标注状态]:::command
+    EvtSearchResult[搜索结果返回]:::event
+    CmdSelectClips[选定 Episodes 和时间片段]:::command
+    EvtClipsSelected[数据范围已确定]:::event
+    CmdCreateDataset[创建/更新数据集]:::command
+    EvtDatasetCreated[数据集已创建]:::event
+    AggDataset[Dataset\nid / name / project_id\nepisode_refs / clip_ranges\nannotation_filter / version]:::aggregate
+
+    MLEng --> CmdSearch
+    DataEng --> CmdSearch
+    CmdSearch --> EvtSearchResult
+    EvtSearchResult --> CmdSelectClips
+    MLEng --> CmdSelectClips
+    CmdSelectClips --> EvtClipsSelected
+    EvtClipsSelected --> CmdCreateDataset
+    CmdCreateDataset --> EvtDatasetCreated
+    EvtDatasetCreated --> AggDataset
+
+    %% ── 版本快照 ──
+    CmdSnapshotVersion[创建版本快照\nv1.0 / v1.1 / ...]:::command
+    EvtVersionSnapshotted[版本快照已创建\n不可变引用]:::event
+    HotVersion[? 版本策略:\n完整快照 vs diff-based?]:::hotspot
+
+    AggDataset --> CmdSnapshotVersion
+    DataEng --> CmdSnapshotVersion
+    CmdSnapshotVersion --> EvtVersionSnapshotted
+    EvtVersionSnapshotted -.question.- HotVersion
+
+    %% ── 导出任务 ──
+    CmdTriggerExport[触发导出\n指定格式/目标存储桶]:::command
+    EvtExportJobCreated[导出任务已创建]:::event
+    AggExportJob[ExportJob\nid / dataset_version_id\nformat / target_bucket\nstatus / progress]:::aggregate
+
+    MLEng --> CmdTriggerExport
+    EvtVersionSnapshotted --> CmdTriggerExport
+    CmdTriggerExport --> EvtExportJobCreated
+    EvtExportJobCreated --> AggExportJob
+
+    %% ── 导出执行 ──
+    EvtDataExtracted[原始数据已提取\nMCAP clip / HDF5 slice]:::event
+    EvtAnnotationsMerged[标注已合并\n→ JSON sidecar / 内嵌]:::event
+    EvtFormatConverted[格式转换完成\nWebDataset / HF datasets / raw]:::event
+    EvtUploadedToCloud[已上传到云存储]:::event
+    EvtManifestGenerated[数据集 Manifest 已生成\nmd5 / 文件列表 / 元信息]:::event
+    EvtExportCompleted[导出完成]:::event
+    HotFormat[? 导出格式优先级:\nWebDataset? HF datasets? 裸文件?]:::hotspot
+
+    AggExportJob --> EvtDataExtracted
+    EvtDataExtracted --> EvtAnnotationsMerged
+    EvtAnnotationsMerged --> EvtFormatConverted
+    EvtFormatConverted -.question.- HotFormat
+    EvtFormatConverted --> EvtUploadedToCloud
+    EvtUploadedToCloud --> CloudStorage
+    EvtUploadedToCloud --> EvtManifestGenerated
+    EvtManifestGenerated --> EvtExportCompleted
+    EvtExportCompleted --> TrainingPlatform
