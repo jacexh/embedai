@@ -95,6 +95,26 @@ class DatasetVersion(Base):
     dataset: Mapped[Dataset] = relationship(back_populates="versions")
 
 
+class ExportJob(Base):
+    __tablename__ = "export_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dataset_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dataset_versions.id"), nullable=False
+    )
+    triggered_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    format: Mapped[str] = mapped_column(String(30), nullable=False)
+    target_bucket: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_prefix: Mapped[str | None] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    progress_pct: Mapped[float | None] = mapped_column(Float, default=0)
+    manifest_url: Mapped[str | None] = mapped_column(String(1000))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class User(Base):
     __tablename__ = "users"
 
