@@ -1,0 +1,202 @@
+# Shared environment variables injected into every service.
+x-common-env: &common-env
+  DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+  REDIS_URL: redis://redis:6379/0
+
+services:
+  # ── Infrastructure ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: embedai
+      POSTGRES_USER: embedai
+      POSTGRES_PASSWORD: embedai_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U embedai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    environment:
+      DJANGO_DB: default
+      POSTGRE_NAME: labelstudio
+      POSTGRE_USER: embedai
+      POSTGRE_PASSWORD: embedai_dev
+      POSTGRE_PORT: 5432
+      POSTGRE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Application services ──────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://embedai:embedai_dev@postgres:5432/embedai
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_BUCKET_EPISODES: episodes
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_EXPIRE_HOURS: "24"
+      GATEWAY_PORT: "8000"
+      GRPC_PORT: "9090"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: "1G"
+
+  dataset-service:
+    build:
+      context: ../services/dataset-service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      DATASET_DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+      DATASET_REDIS_URL: redis://redis:6379/0
+      DATASET_JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "512M"
+
+  task-service:
+    build:
+      context: ../services/task-service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      TASK_DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+      TASK_REDIS_URL: redis://redis:6379/0
+      TASK_JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      TASK_GATEWAY_URL: http://gateway:8000
+      TASK_LABEL_STUDIO_URL: http://label-studio:8080
+      TASK_LABEL_STUDIO_API_KEY: ${LABEL_STUDIO_API_KEY:-placeholder}
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "512M"
+
+  pipeline:
+    build:
+      context: ../services/pipeline
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_BUCKET: episodes
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "4"
+          memory: "4G"
+
+  export-worker:
+    build:
+      context: ../services/export-worker
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      EXPORT_DATABASE_URL: postgresql+asyncpg://embedai:embedai_dev@postgres:5432/embedai
+      EXPORT_REDIS_URL: redis://redis:6379/0
+      EXPORT_MINIO_ENDPOINT: http://minio:9000
+      EXPORT_MINIO_ACCESS_KEY: minioadmin
+      EXPORT_MINIO_SECRET_KEY: minioadmin123
+      EXPORT_MINIO_BUCKET: embedai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "4"
+          memory: "8G"
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "128M"
+
+volumes:
+  postgres_data:
+  minio_data:
