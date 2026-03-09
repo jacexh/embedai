@@ -100,10 +100,11 @@ func main() {
 			upload.POST("/:session_id/complete", uploadHandler.Complete)
 		}
 
-		// Reverse-proxy all other /api/v1/* requests to dataset-service or task-service.
-		// Gin's radix tree matches the explicit upload routes above before this wildcard.
-		api.Any("/*path", proxyHandler.Handle)
 	}
+
+	// Reverse-proxy unmatched /api/v1/* to dataset-service or task-service.
+	// NoRoute avoids Gin's radix-tree conflict between static routes and catch-all wildcards.
+	r.NoRoute(middleware.Auth(cfg.JWTSecret), proxyHandler.Handle)
 
 	// ── gRPC server ───────────────────────────────────────────────────────
 	streamSrv := grpcserver.NewStreamServer(episodeRepo, minioStorage, pub)

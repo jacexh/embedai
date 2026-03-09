@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
@@ -38,8 +39,13 @@ var taskServicePrefixes = []string{
 }
 
 // Handle routes the request to dataset-service or task-service based on path prefix.
+// Only proxies /api/v1/* paths; everything else returns 404.
 func (h *ProxyHandler) Handle(c *gin.Context) {
 	path := c.Request.URL.Path
+	if !strings.HasPrefix(path, "/api/v1/") {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
 	for _, prefix := range taskServicePrefixes {
 		if strings.HasPrefix(path, prefix) {
 			h.taskProxy.ServeHTTP(c.Writer, c.Request)
