@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	Port                string
+	GRPCPort            string
 	DatabaseURL         string
 	RedisURL            string
 	MinioEndpoint       string
@@ -21,6 +22,7 @@ func Load() *Config {
 	expHours, _ := strconv.Atoi(getEnv("JWT_EXPIRE_HOURS", "24"))
 	return &Config{
 		Port:                getEnv("GATEWAY_PORT", "8000"),
+		GRPCPort:            getEnv("GRPC_PORT", "9090"),
 		DatabaseURL:         mustEnv("DATABASE_URL"),
 		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		MinioEndpoint:       getEnv("MINIO_ENDPOINT", "localhost:9000"),

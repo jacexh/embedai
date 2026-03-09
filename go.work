@@ -1,0 +1,6 @@
+go 1.25.5
+
+use (
+	./services/gateway
+	./shared/proto/github.com/embedai/datahub/shared/proto
+)
