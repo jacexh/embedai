@@ -102,17 +102,18 @@ def _version_out(v: DatasetVersion) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/datasets", response_model=list[DatasetOut])
+@router.get("/datasets")
 async def list_datasets(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list:
+) -> dict:
     project_id = uuid.UUID(current_user.project_id)
     result = await db.execute(
         select(Dataset).where(Dataset.project_id == project_id).order_by(Dataset.created_at.desc())
     )
     datasets = result.scalars().all()
-    return [_dataset_out(ds) for ds in datasets]
+    items = [_dataset_out(ds) for ds in datasets]
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/datasets", status_code=201, response_model=DatasetOut)
@@ -144,12 +145,12 @@ async def create_dataset(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/datasets/{dataset_id}/versions", response_model=list[DatasetVersionOut])
+@router.get("/datasets/{dataset_id}/versions")
 async def list_versions(
     dataset_id: uuid.UUID,
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list:
+) -> dict:
     project_id = uuid.UUID(current_user.project_id)
 
     ds_result = await db.execute(
@@ -163,7 +164,8 @@ async def list_versions(
         select(DatasetVersion).where(DatasetVersion.dataset_id == dataset_id).order_by(DatasetVersion.created_at.desc())
     )
     versions = v_result.scalars().all()
-    return [_version_out(v) for v in versions]
+    items = [_version_out(v) for v in versions]
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/datasets/{dataset_id}/versions", status_code=201, response_model=DatasetVersionOut)

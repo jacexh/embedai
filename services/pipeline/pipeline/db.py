@@ -1,6 +1,7 @@
 """Database access layer for the pipeline worker."""
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import asdict
 from typing import Any
@@ -66,7 +67,7 @@ class Database:
                     "id": episode_id,
                     "duration": duration,
                     "quality_score": quality_score,
-                    "metadata": metadata,
+                    "metadata": json.dumps(metadata),
                 },
             )
             # Upsert topics

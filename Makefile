@@ -25,16 +25,27 @@ dev-services:
 dev-services-down:
 	docker compose -f infra/docker-compose.dev.yml down
 
+# Docker network and image used for migrate/seed (runs inside infra network to reach postgres/minio)
+_DOCKER_MIGRATE = docker run --rm \
+	--network infra_default \
+	-v "$(CURDIR)/shared/migrations:/migrations" \
+	-w /migrations \
+	-e DATABASE_URL=postgresql://embedai:embedai_dev@postgres:5432/embedai \
+	-e MINIO_ENDPOINT=minio:9000 \
+	-e MINIO_SECURE=false \
+	ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
 migrate:
-	cd shared/migrations && alembic upgrade head
+	$(_DOCKER_MIGRATE) uv run --with alembic --with psycopg2-binary --with sqlalchemy alembic upgrade head
 
 seed:
-	cd shared/migrations && uv run --with minio --with psycopg2-binary --with bcrypt python seed.py
+	$(_DOCKER_MIGRATE) uv run --with minio --with psycopg2-binary --with bcrypt python seed.py
 
 seed-prod:
 	@test -n "$(ADMIN_PASSWORD)" || (echo "ERROR: ADMIN_PASSWORD is required  →  make seed-prod ADMIN_PASSWORD=xxx" && exit 1)
-	cd shared/migrations && \
-	  CREATE_DEMO_USERS=false ADMIN_PASSWORD=$(ADMIN_PASSWORD) \
+	$(_DOCKER_MIGRATE) \
+	  -e CREATE_DEMO_USERS=false \
+	  -e ADMIN_PASSWORD=$(ADMIN_PASSWORD) \
 	  uv run --with minio --with psycopg2-binary --with bcrypt python seed.py
 
 test-gateway:

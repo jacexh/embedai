@@ -75,7 +75,13 @@ def _hash_password(password: str) -> str:
 
 def setup_minio() -> None:
     print("\n── MinIO ──────────────────────────────────────────────────────")
-    secure = not MINIO_ENDPOINT.startswith("localhost") and not MINIO_ENDPOINT.startswith("127.")
+    _secure_env = os.environ.get("MINIO_SECURE", "").lower()
+    if _secure_env in ("true", "1", "yes"):
+        secure = True
+    elif _secure_env in ("false", "0", "no"):
+        secure = False
+    else:
+        secure = not MINIO_ENDPOINT.startswith("localhost") and not MINIO_ENDPOINT.startswith("127.")
     client = Minio(MINIO_ENDPOINT, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=secure)
 
     for bucket in BUCKETS:
