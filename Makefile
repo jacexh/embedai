@@ -10,6 +10,15 @@ down:
 migrate:
 	cd shared/migrations && alembic upgrade head
 
+seed:
+	cd shared/migrations && uv run --with minio --with psycopg2-binary --with bcrypt python seed.py
+
+seed-prod:
+	@test -n "$(ADMIN_PASSWORD)" || (echo "ERROR: ADMIN_PASSWORD is required  →  make seed-prod ADMIN_PASSWORD=xxx" && exit 1)
+	cd shared/migrations && \
+	  CREATE_DEMO_USERS=false ADMIN_PASSWORD=$(ADMIN_PASSWORD) \
+	  uv run --with minio --with psycopg2-binary --with bcrypt python seed.py
+
 test-gateway:
 	cd services/gateway && go test ./...
 
@@ -30,6 +39,7 @@ e2e-up:
 	@echo "Waiting for services to be healthy..."
 	@sleep 15
 	$(MAKE) migrate
+	$(MAKE) seed
 
 e2e-down:
 	docker compose -f infra/docker-compose.prod.yml down

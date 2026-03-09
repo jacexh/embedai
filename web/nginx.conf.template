@@ -1,0 +1,28 @@
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Proxy auth endpoints to gateway
+    location /auth/ {
+        proxy_pass ${GATEWAY_URL}/auth/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Proxy REST API to gateway
+    location /api/v1/ {
+        proxy_pass ${GATEWAY_URL}/api/v1/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Support large file uploads (10GB)
+        client_max_body_size 10240m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

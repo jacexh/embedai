@@ -16,7 +16,7 @@ export function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const { data } = await apiClient.post("/auth/login", { email, password });
+      const { data } = await apiClient.post("/auth/login", { email, password }, { baseURL: "/" });
       login(data.token, data.user);
       navigate("/episodes");
     } catch {

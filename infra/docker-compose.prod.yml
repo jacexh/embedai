@@ -189,6 +189,8 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile
+    environment:
+      GATEWAY_URL: http://gateway:8000
     ports:
       - "3000:80"
     deploy:
