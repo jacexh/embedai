@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     # MinIO
     minio_endpoint: str = "http://minio:9000"
-    minio_bucket: str = "embedai"
+    minio_bucket: str = "episodes"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin123"
 
