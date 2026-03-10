@@ -172,6 +172,25 @@ async def get_episode_detail(
     return data
 
 
+@router.delete("/{episode_id}", status_code=204)
+async def delete_episode(
+    episode_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    project_id = uuid.UUID(current_user.project_id)
+
+    result = await db.execute(
+        select(Episode).where(Episode.id == episode_id, Episode.project_id == project_id)
+    )
+    ep = result.scalar_one_or_none()
+    if ep is None:
+        raise HTTPException(status_code=404, detail="episode not found")
+
+    await db.delete(ep)
+    await db.commit()
+
+
 @router.get("/{episode_id}/stream-token", response_model=StreamTokenOut)
 async def get_stream_token(
     episode_id: uuid.UUID,

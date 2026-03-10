@@ -12,6 +12,8 @@ from .helpers import E2EClient
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
 DATASET_SERVICE_URL = os.getenv("DATASET_SERVICE_URL", "http://localhost:8001")
 TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://localhost:8002")
+# Must match an existing project in DB (seed creates "Default Project" with this ID).
+E2E_PROJECT_ID = os.getenv("E2E_PROJECT_ID", "36325736-7e34-4d32-a006-81bd20d50f04")
 
 # Reuse the sample fixture created by the pipeline service tests.
 _SAMPLE_MCAP = os.path.join(
@@ -20,11 +22,11 @@ _SAMPLE_MCAP = os.path.join(
 )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def gateway_client() -> E2EClient:  # type: ignore[override]
     """Register an admin user, log in, and return authenticated clients."""
     unique = uuid.uuid4().hex[:8]
-    project_id = str(uuid.uuid4())
+    project_id = E2E_PROJECT_ID
     email = f"e2e_{unique}@test.local"
     password = "e2e_pass_123"
 
@@ -51,19 +53,15 @@ async def gateway_client() -> E2EClient:  # type: ignore[override]
         user_id = resp.json()["user"]["id"]
 
     headers = {"Authorization": f"Bearer {token}"}
-    gw = httpx.AsyncClient(base_url=GATEWAY_URL, headers=headers, timeout=60.0)
-    ds = httpx.AsyncClient(base_url=DATASET_SERVICE_URL, headers=headers, timeout=60.0)
-    ts = httpx.AsyncClient(base_url=TASK_SERVICE_URL, headers=headers, timeout=60.0)
-
-    try:
+    async with (
+        httpx.AsyncClient(base_url=GATEWAY_URL, headers=headers, timeout=60.0) as gw,
+        httpx.AsyncClient(base_url=DATASET_SERVICE_URL, headers=headers, timeout=60.0) as ds,
+        httpx.AsyncClient(base_url=TASK_SERVICE_URL, headers=headers, timeout=60.0) as ts,
+    ):
         yield E2EClient(gateway=gw, dataset=ds, task=ts, user_id=user_id, project_id=project_id)
-    finally:
-        await gw.aclose()
-        await ds.aclose()
-        await ts.aclose()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def pipeline_worker(gateway_client: E2EClient) -> E2EClient:
     """Smoke-check the gateway healthz endpoint before E2E tests run."""
     resp = await gateway_client.gateway.get("/healthz")

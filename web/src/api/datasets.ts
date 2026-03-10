@@ -73,7 +73,14 @@ export function useCreateVersion() {
     }: {
       datasetId: string;
       payload: { episode_ids: string[]; version_tag: string; filter?: Record<string, unknown> };
-    }) => apiClient.post<DatasetVersion>(`/datasets/${datasetId}/versions`, payload),
+    }) => {
+      // Backend expects episode_refs: [{episode_id}], not episode_ids: [string]
+      const { episode_ids, version_tag } = payload;
+      return apiClient.post<DatasetVersion>(`/datasets/${datasetId}/versions`, {
+        version_tag,
+        episode_refs: episode_ids.map((id) => ({ episode_id: id })),
+      });
+    },
     onSuccess: (_, { datasetId }) =>
       qc.invalidateQueries({ queryKey: ["datasets", datasetId, "versions"] }),
   });

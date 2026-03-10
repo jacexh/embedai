@@ -91,6 +91,7 @@ def _version_out(v: DatasetVersion) -> dict:
         "episode_refs": v.episode_refs or [],
         "episode_count": v.episode_count,
         "total_size_bytes": v.total_size_bytes,
+        "size_estimate_bytes": v.total_size_bytes,  # frontend field name alias
         "is_immutable": v.is_immutable,
         "created_by": str(v.created_by) if v.created_by else None,
         "created_at": v.created_at.isoformat() if v.created_at else None,

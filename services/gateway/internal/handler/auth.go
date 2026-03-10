@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/embedai/datahub/gateway/internal/middleware"
@@ -105,7 +107,19 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	if err := h.userRepo.Create(c.Request.Context(), user); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "email already exists"})
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23505": // unique_violation
+				c.JSON(http.StatusConflict, gin.H{"error": "email already exists"})
+			case "23503": // foreign_key_violation
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "project_id does not exist"})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+		}
 		return
 	}
 

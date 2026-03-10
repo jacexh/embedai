@@ -6,6 +6,7 @@ import { EpisodeDetailModal } from "@/components/EpisodeDetailModal";
 import { Spinner } from "@/components/Spinner";
 import { Pagination } from "@/components/Pagination";
 import { toast } from "@/store/toast";
+import { useAuthStore } from "@/store/auth";
 
 const STATUS_OPTIONS = [
   { value: "", label: "全部状态" },
@@ -22,7 +23,7 @@ const FORMAT_OPTIONS = [
 ];
 
 export function EpisodesPage() {
-  const [status, setStatus] = useState("ready");
+  const [status, setStatus] = useState("");
   const [format, setFormat] = useState("");
   const [minQuality, setMinQuality] = useState(0);
   const [page, setPage] = useState(1);
@@ -39,6 +40,8 @@ export function EpisodesPage() {
 
   const createTask = useCreateTask();
   const deleteEpisode = useDeleteEpisode();
+  const user = useAuthStore((s) => s.user);
+  const hasActiveFilter = !!(status || format || minQuality);
 
   const handleCreateTask = async (episodeId: string) => {
     try {
@@ -110,10 +113,25 @@ export function EpisodesPage() {
       ) : data?.items.length === 0 ? (
         <div className="text-center text-gray-400 py-12">
           <p className="text-lg mb-2">暂无数据</p>
-          <p className="text-sm">
-            请先{" "}
-            <a href="/upload" className="text-blue-600 hover:underline">上传录制文件</a>
-          </p>
+          {hasActiveFilter ? (
+            <p className="text-sm">
+              当前有过滤条件，请尝试{" "}
+              <button
+                onClick={() => { setStatus(""); setFormat(""); setMinQuality(0); setPage(1); }}
+                className="text-blue-600 hover:underline"
+              >
+                清除过滤
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm">
+              请先{" "}
+              <a href="/upload" className="text-blue-600 hover:underline">上传录制文件</a>
+              ，或检查当前账号（
+              <span className="font-mono text-xs text-gray-500">{user?.email}</span>
+              ）是否正确
+            </p>
+          )}
         </div>
       ) : (
         <>

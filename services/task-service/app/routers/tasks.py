@@ -377,7 +377,8 @@ async def list_users_with_workload(
     project_id = uuid.UUID(current_user.project_id)
     q = select(User).where(User.project_id == project_id, User.is_active.is_(True))
     if role:
-        q = q.where(User.role == role)
+        # Prefix match: role=annotator matches annotator_internal and annotator_outsource
+        q = q.where(User.role.startswith(role))
     result = await db.execute(q)
     users = result.scalars().all()
 

@@ -44,7 +44,7 @@ func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*User, error)
 func (r *UserRepo) Create(ctx context.Context, u *User) error {
 	_, err := r.db.Exec(ctx,
 		`INSERT INTO users (id, email, name, hashed_password, role, project_id)
-		 VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))`,
+		 VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid)`,
 		u.ID, u.Email, u.Name, u.HashedPassword, u.Role, u.ProjectID,
 	)
 	return err

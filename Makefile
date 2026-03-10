@@ -76,3 +76,12 @@ e2e-down:
 ## Run end-to-end integration tests (requires e2e-up first).
 e2e:
 	cd tests && uv run pytest e2e/ -m e2e -v --timeout=600
+
+## Run E2E tests for a specific module (auth/episodes/datasets/exports/tasks/gateway/pipeline).
+## Usage: make e2e-module MODULE=exports
+e2e-module:
+	cd tests && uv run pytest e2e/test_$(MODULE).py -m e2e -v --timeout=300
+
+## Run E2E tests and stop on first failure (fast feedback).
+e2e-fast:
+	cd tests && uv run pytest e2e/ -m e2e -x --timeout=300
