@@ -1,8 +1,6 @@
 """Episode query API — Task 4.1."""
 from __future__ import annotations
 
-import os
-import tempfile
 import uuid
 from typing import Any
 
@@ -15,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.auth import CurrentUser, create_stream_token, get_current_user
 from app.config import settings
 from app.database import get_db
+from app.services.cache_registry import get_mcap_cache
 from app.models import Episode, Topic
 from app.services.frame_extractor import McapFrameExtractor
 from app.storage import StorageClient
@@ -243,30 +242,33 @@ async def get_frame(
     if not ep.storage_path:
         raise HTTPException(status_code=400, detail="episode file not available")
 
-    # Download file to temp location
+    # Get file from cache (downloads if not cached, no cleanup needed)
     storage = StorageClient()
-    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as tmp:
-        tmp_path = tmp.name
-        await storage.download_to_file(ep.storage_path, tmp_path)
+    cache = get_mcap_cache()
+    try:
+        mcap_path = await cache.get_or_download(str(episode_id), ep.storage_path, storage)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to retrieve episode file: {exc}") from exc
 
     try:
-        # Extract frame
-        with McapFrameExtractor(tmp_path) as extractor:
-            frame = extractor.extract_frame(topic, timestamp)
+        with McapFrameExtractor(mcap_path) as extractor:
+            time_range = extractor.get_time_range()
+            mcap_start_time_ns = time_range[0] if time_range else 0
 
-        if frame is None:
-            raise HTTPException(status_code=404, detail="no frame found at specified time")
+            frame = extractor.extract_frame(
+                topic, timestamp, time_offset_ns=mcap_start_time_ns
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"frame extraction failed: {exc}") from exc
 
-        return Response(
-            content=frame.data,
-            media_type="image/jpeg",
-            headers={
-                "X-Frame-Timestamp": str(frame.timestamp_ns),
-                "Cache-Control": "private, max-age=300",
-            },
-        )
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    if frame is None:
+        raise HTTPException(status_code=404, detail="no frame found at specified time")
+
+    return Response(
+        content=frame.data,
+        media_type="image/jpeg",
+        headers={
+            "X-Frame-Timestamp": str(frame.timestamp_ns),
+            "Cache-Control": "private, max-age=300",
+        },
+    )
