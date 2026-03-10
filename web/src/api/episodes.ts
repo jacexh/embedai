@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import { apiClient } from "./client";
 
 export interface Episode {
@@ -158,7 +159,8 @@ export interface FrameResult {
 
 export async function getFrame(
   episodeId: string,
-  options: FrameOptions
+  options: FrameOptions,
+  signal?: AbortSignal
 ): Promise<FrameResult> {
   const params = new URLSearchParams({
     topic: options.topic,
@@ -167,7 +169,7 @@ export async function getFrame(
 
   const response = await apiClient.get<ArrayBuffer>(
     `/episodes/${episodeId}/frame?${params}`,
-    { responseType: "arraybuffer" }
+    { responseType: "arraybuffer", signal }
   );
 
   const timestampNs = parseInt(

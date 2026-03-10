@@ -1,12 +1,32 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEpisode } from "@/api/episodes";
 import { useMcapFrames } from "@/hooks/useMcapFrames";
 import { VideoGrid } from "@/components/VideoGrid";
 import { TimelineControl } from "@/components/TimelineControl";
 import { Spinner } from "@/components/Spinner";
+
+// Simple debounce hook
+function useDebounce<T extends (...args: any[]) => void>(
+  fn: T,
+  delay: number
+): T {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  return useCallback(
+    (...args: Parameters<T>) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
+        fn(...args);
+      }, delay);
+    },
+    [fn, delay]
+  ) as T;
+}
 
 // Filter image topics from episode
 function getImageTopics(episode: ReturnType<typeof useEpisode>["data"]): string[] {
@@ -28,7 +48,8 @@ export function PreviewPage() {
   const navigate = useNavigate();
   const { data: episode, isLoading: isLoadingEpisode } = useEpisode(episodeId!);
 
-  const imageTopics = getImageTopics(episode);
+  // Memoize to avoid new array reference every render (would cause infinite loops)
+  const imageTopics = useMemo(() => getImageTopics(episode), [episode]);
   const duration = episode?.duration_seconds ?? 0;
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -40,8 +61,12 @@ export function PreviewPage() {
     topics: imageTopics,
   });
 
-  const animationRef = useRef<number>();
+  // Debounced frame loading to prevent browser resource exhaustion
+  const debouncedLoadFrames = useDebounce(loadFrames, 150);
+
+  const animationRef = useRef<number | undefined>(undefined);
   const lastFrameTimeRef = useRef<number>(0);
+  const lastLoadedTimeRef = useRef<number>(-1); // Track last loaded frame time
 
   // Initial load - get first frame
   useEffect(() => {
@@ -92,21 +117,28 @@ export function PreviewPage() {
     };
   }, [isPlaying, playbackRate, duration]);
 
-  // Load frames when currentTime changes (in pause mode or when playing)
+  // Load frames when currentTime changes
+  // During playback, only load if we've advanced >= 200ms since last load
   useEffect(() => {
-    if (!isPlaying || currentTime % 10 === 0) {
-      // Throttle frame loading during playback
-      loadFrames(currentTime);
+    const PLAYBACK_FRAME_INTERVAL_NS = 200_000_000; // 200ms in nanoseconds
+    if (
+      !isPlaying ||
+      lastLoadedTimeRef.current < 0 ||
+      Math.abs(currentTime - lastLoadedTimeRef.current) >= PLAYBACK_FRAME_INTERVAL_NS
+    ) {
+      lastLoadedTimeRef.current = currentTime;
+      debouncedLoadFrames(currentTime);
     }
-  }, [currentTime, isPlaying, loadFrames]);
+  }, [currentTime, isPlaying, debouncedLoadFrames]);
 
   const handleSeek = useCallback(
     (timeNs: number) => {
+      lastLoadedTimeRef.current = -1; // Force immediate load on seek
       setCurrentTime(timeNs);
       setIsPlaying(false);
-      loadFrames(timeNs);
+      debouncedLoadFrames(timeNs);
     },
-    [loadFrames]
+    [debouncedLoadFrames]
   );
 
   const handlePlay = useCallback(() => {

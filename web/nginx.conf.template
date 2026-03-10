@@ -26,8 +26,18 @@ server {
         proxy_send_timeout 300s;
     }
 
-    # SPA fallback
+    # Static assets with caching
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA fallback - serve index.html for all non-file routes
     location / {
         try_files $uri $uri/ /index.html;
     }
+
+    # Handle 404 errors by serving index.html (for React Router)
+    error_page 404 =200 /index.html;
 }

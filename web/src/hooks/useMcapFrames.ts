@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import axios from "axios";
 import { getFrame } from "@/api/episodes";
 
 interface UseMcapFramesOptions {
@@ -26,15 +27,15 @@ async function runWithConcurrency<T>(
   const executing: Promise<void>[] = [];
 
   for (const item of items) {
-    const promise = fn(item);
-    executing.push(promise);
+    // Wrap to self-remove from executing when done
+    const task: Promise<void> = fn(item).finally(() => {
+      const idx = executing.indexOf(task);
+      if (idx !== -1) executing.splice(idx, 1);
+    });
+    executing.push(task);
 
     if (executing.length >= concurrency) {
       await Promise.race(executing);
-      executing.splice(
-        executing.findIndex((p) => p === promise),
-        1
-      );
     }
   }
 
@@ -83,10 +84,18 @@ export function useMcapFrames({ episodeId, topics }: UseMcapFramesOptions) {
             }
 
             try {
-              const result = await getFrame(episodeId, { topic, timestamp });
+              const result = await getFrame(
+                episodeId,
+                { topic, timestamp },
+                abortControllerRef.current?.signal
+              );
               newFrames.set(topic, result.blobUrl);
               cacheRef.current[cacheKey] = result.blobUrl;
             } catch (error) {
+              if (axios.isCancel(error)) {
+                // Request was cancelled, ignore
+                return;
+              }
               console.error(`Failed to load frame for ${topic}:`, error);
               // Leave empty for failed topics
             }
@@ -114,10 +123,18 @@ export function useMcapFrames({ episodeId, topics }: UseMcapFramesOptions) {
           if (cacheRef.current[cacheKey]) return;
 
           try {
-            const result = await getFrame(episodeId, { topic, timestamp });
+            const result = await getFrame(
+              episodeId,
+              { topic, timestamp },
+              abortControllerRef.current?.signal
+            );
             cacheRef.current[cacheKey] = result.blobUrl;
-          } catch {
-            // Ignore preload errors
+          } catch (error) {
+            if (axios.isCancel(error)) {
+              // Request was cancelled, ignore
+              return;
+            }
+            // Ignore other preload errors
           }
         },
         MAX_CONCURRENT
