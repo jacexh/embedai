@@ -20,9 +20,9 @@ class TestListDatasets:
         resp = client.get("/api/v1/datasets", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert data[0]["name"] == "test-dataset"
+        assert "items" in data
+        assert data["total"] == 1
+        assert data["items"][0]["name"] == "test-dataset"
 
     def test_list_datasets_unauthenticated(self, client):
         resp = client.get("/api/v1/datasets")
@@ -216,8 +216,9 @@ class TestListVersions:
         resp = client.get(f"/api/v1/datasets/{ds.id}/versions", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 2
-        tags = [v["version_tag"] for v in data]
+        assert "items" in data
+        assert data["total"] == 2
+        tags = [v["version_tag"] for v in data["items"]]
         assert "v1.0.0" in tags
         assert "v1.1.0" in tags
 

@@ -12,6 +12,12 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "loguru>=0.7",
     "redis>=5.0",
+    "numpy>=1.24",
+    "opencv-python-headless>=4.9",
+    "mcap>=1.1.0",
+    "mcap-ros2-support>=0.4",
+    "rosbags>=0.9.0",
+    "aioboto3>=12.0",
 ]
 
 [project.optional-dependencies]
