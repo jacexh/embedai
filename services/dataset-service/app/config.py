@@ -8,6 +8,12 @@ class Settings(BaseSettings):
     stream_token_expire_seconds: int = 3600
     redis_url: str = "redis://localhost:6379/0"
 
+    # MinIO
+    minio_endpoint: str = "http://minio:9000"
+    minio_bucket: str = "embedai"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin123"
+
     model_config = {"env_prefix": "DATASET_"}
 
 
