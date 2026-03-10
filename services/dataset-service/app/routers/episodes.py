@@ -1,10 +1,12 @@
 """Episode query API — Task 4.1."""
 from __future__ import annotations
 
+import os
+import tempfile
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,8 @@ from app.auth import CurrentUser, create_stream_token, get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models import Episode, Topic
+from app.services.frame_extractor import McapFrameExtractor
+from app.storage import StorageClient
 
 router = APIRouter(prefix="/episodes", tags=["episodes"])
 
@@ -209,3 +213,60 @@ async def get_stream_token(
     expires_in = settings.stream_token_expire_seconds
     token = create_stream_token(str(episode_id), expires_in=expires_in)
     return {"stream_token": token, "expires_in": expires_in}
+
+
+@router.get("/{episode_id}/frame")
+async def get_frame(
+    episode_id: uuid.UUID,
+    topic: str = Query(..., description="Topic name to extract frame from"),
+    timestamp: int = Query(..., description="Target timestamp in nanoseconds"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Extract a single frame from MCAP file at specified timestamp."""
+    project_id = uuid.UUID(current_user.project_id)
+
+    # Get episode
+    result = await db.execute(
+        select(Episode).where(
+            Episode.id == episode_id,
+            Episode.project_id == project_id,
+        )
+    )
+    ep = result.scalar_one_or_none()
+    if ep is None:
+        raise HTTPException(status_code=404, detail="episode not found")
+
+    if ep.format != "mcap":
+        raise HTTPException(status_code=400, detail="only MCAP format supported")
+
+    if not ep.storage_path:
+        raise HTTPException(status_code=400, detail="episode file not available")
+
+    # Download file to temp location
+    storage = StorageClient()
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as tmp:
+        tmp_path = tmp.name
+        await storage.download_to_file(ep.storage_path, tmp_path)
+
+    try:
+        # Extract frame
+        with McapFrameExtractor(tmp_path) as extractor:
+            frame = extractor.extract_frame(topic, timestamp)
+
+        if frame is None:
+            raise HTTPException(status_code=404, detail="no frame found at specified time")
+
+        return Response(
+            content=frame.data,
+            media_type="image/jpeg",
+            headers={
+                "X-Frame-Timestamp": str(frame.timestamp_ns),
+                "Cache-Control": "private, max-age=300",
+            },
+        )
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
