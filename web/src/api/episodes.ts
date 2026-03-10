@@ -143,3 +143,40 @@ export async function uploadEpisodeFile(
   await completeUpload(session_id);
   return episode_id;
 }
+
+// ── Frame Extraction ──────────────────────────────────────────────────────
+
+export interface FrameOptions {
+  topic: string;
+  timestamp: number; // nanoseconds
+}
+
+export interface FrameResult {
+  blobUrl: string;
+  timestampNs: number;
+}
+
+export async function getFrame(
+  episodeId: string,
+  options: FrameOptions
+): Promise<FrameResult> {
+  const params = new URLSearchParams({
+    topic: options.topic,
+    timestamp: String(options.timestamp),
+  });
+
+  const response = await apiClient.get<ArrayBuffer>(
+    `/episodes/${episodeId}/frame?${params}`,
+    { responseType: "arraybuffer" }
+  );
+
+  const timestampNs = parseInt(
+    response.headers["x-frame-timestamp"] || String(options.timestamp),
+    10
+  );
+
+  const blob = new Blob([response.data], { type: "image/jpeg" });
+  const blobUrl = URL.createObjectURL(blob);
+
+  return { blobUrl, timestampNs };
+}
