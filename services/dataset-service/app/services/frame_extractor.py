@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, BinaryIO
 
 import numpy as np
 from loguru import logger
@@ -27,15 +27,16 @@ class McapFrameExtractor:
 
     def __init__(self, file_path: str | Path):
         self.file_path = Path(file_path)
+        self._file_handle: BinaryIO | None = None
         self._reader: McapReader | None = None
-        self._image_topics: list[str] | None = None
 
     def _get_reader(self) -> McapReader:
         """Lazy init reader."""
         if self._reader is None:
             from mcap.reader import make_reader
 
-            self._reader = make_reader(open(self.file_path, "rb"))
+            self._file_handle = open(self.file_path, "rb")
+            self._reader = make_reader(self._file_handle)
         return self._reader
 
     def get_image_topics(self) -> list[dict]:
@@ -167,10 +168,11 @@ class McapFrameExtractor:
             return None
 
     def close(self):
-        """Close the reader and release resources."""
-        if self._reader:
-            self._reader.close()
-            self._reader = None
+        """Close the file handle and release resources."""
+        if self._file_handle:
+            self._file_handle.close()
+            self._file_handle = None
+        self._reader = None
 
     def __enter__(self):
         return self
