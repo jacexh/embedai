@@ -54,6 +54,23 @@ class TestMcapFileCacheBasic:
 
         assert mock_storage.download_to_file.call_count == 2
 
+    async def test_download_failure_clears_lock(self, cache, tmp_path):
+        """Download failure cleans up episode lock so next request can retry."""
+        fail_storage = MagicMock()
+        fail_storage.download_to_file = AsyncMock(side_effect=Exception("Download failed"))
+
+        with pytest.raises(Exception, match="Download failed"):
+            await cache.get_or_download("ep-fail", "storage/fail.mcap", fail_storage)
+
+        # Lock should be removed so next request creates a fresh one
+        assert "ep-fail" not in cache._episode_locks
+
+        # Now retry with working storage should succeed
+        ok_storage = MagicMock()
+        ok_storage.download_to_file = AsyncMock()
+        path = await cache.get_or_download("ep-fail", "storage/fail.mcap", ok_storage)
+        ok_storage.download_to_file.assert_called_once()
+
 
 class TestMcapFileCacheLRU:
     """LRU eviction behavior."""

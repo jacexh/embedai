@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
+import tempfile
 import time
 from collections import OrderedDict
 
@@ -24,7 +26,6 @@ class McapFileCache:
         ttl_seconds: int = 300,
         cache_dir: str | None = None,
     ):
-        import tempfile
         self._max_size = max_size
         self._ttl = ttl_seconds
         self._cache_dir = cache_dir or tempfile.gettempdir()
@@ -67,10 +68,17 @@ class McapFileCache:
                         self._cache[episode_id] = (path, time.monotonic())
                         return path
 
-            safe_id = episode_id.replace("-", "")[:16]
+            safe_id = hashlib.sha256(episode_id.encode()).hexdigest()[:32]
             tmp_path = os.path.join(self._cache_dir, f"mcap_{safe_id}.mcap")
             logger.info("Downloading MCAP {} -> {}", storage_path, tmp_path)
-            await storage.download_to_file(storage_path, tmp_path)
+            try:
+                await storage.download_to_file(storage_path, tmp_path)
+            except Exception:
+                # Clean up lock and any partial file so next request can retry
+                self._remove_file(tmp_path)
+                async with self._global_lock:
+                    self._episode_locks.pop(episode_id, None)
+                raise
 
             async with self._global_lock:
                 while len(self._cache) >= self._max_size:
@@ -109,5 +117,5 @@ class McapFileCache:
     def _remove_file(self, path: str) -> None:
         try:
             os.unlink(path)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.warning("Failed to remove cached MCAP file {}: {}", path, e)
