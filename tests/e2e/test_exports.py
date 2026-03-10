@@ -229,3 +229,107 @@ class TestExportJobGet:
                 "BUG-4: ExportJob response missing 'updated_at' field. "
                 "Frontend ExportJob type declares updated_at: string."
             )
+
+
+@pytest.mark.e2e
+class TestExportJobProgress:
+    """Export job progress tracking and completion."""
+
+    async def _create_version_and_job(
+        self, gateway_client: E2EClient, fmt: str = "webdataset"
+    ) -> tuple[str, str, dict]:
+        """Helper: create dataset → version → export job, return (version_id, job_id, job_body)."""
+        version_id = await _create_dataset_version(gateway_client)
+        resp = await gateway_client.dataset.post(
+            f"/api/v1/dataset-versions/{version_id}/exports",
+            json={"format": fmt, "target_bucket": "s3://progress-test/"},
+        )
+        assert resp.status_code in (201, 202), f"Create export job failed: {resp.text}"
+        body = resp.json()
+        return version_id, body["id"], body
+
+    async def test_new_export_job_starts_as_pending(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """A freshly created export job must have status 'pending' or 'running'
+        and a progress_pct in [0, 100]."""
+        _, _, body = await self._create_version_and_job(gateway_client)
+
+        assert "status" in body, f"Response missing 'status': {body}"
+        assert body["status"] in ("pending", "running"), (
+            f"New job expected status 'pending' or 'running', got: {body['status']}"
+        )
+        if "progress_pct" in body:
+            pct = body["progress_pct"]
+            assert isinstance(pct, (int, float)), (
+                f"progress_pct should be numeric, got {type(pct)}: {pct}"
+            )
+            assert 0.0 <= pct <= 100.0, (
+                f"progress_pct out of range [0, 100]: {pct}"
+            )
+
+    async def test_export_job_response_has_progress_field(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """GET on an export job must return 'progress_pct' and 'status' fields."""
+        _, job_id, _ = await self._create_version_and_job(gateway_client)
+
+        resp = await gateway_client.dataset.get(f"/api/v1/export-jobs/{job_id}")
+        assert resp.status_code == 200, f"Get export job failed: {resp.text}"
+        body = resp.json()
+
+        assert "status" in body, f"GET response missing 'status': {body}"
+        assert body["status"] in ("pending", "running", "completed", "failed"), (
+            f"Unexpected status value: {body['status']}"
+        )
+        assert "progress_pct" in body, (
+            f"GET response missing 'progress_pct' field: {body}"
+        )
+        pct = body["progress_pct"]
+        assert isinstance(pct, (int, float)), (
+            f"progress_pct should be numeric, got {type(pct)}: {pct}"
+        )
+        assert 0.0 <= pct <= 100.0, f"progress_pct out of range [0, 100]: {pct}"
+
+    async def test_export_job_supported_formats_accepted(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """Both currently supported export formats must be accepted with 201.
+        NOTE: hf_datasets is P1 in ADR H6 and not yet implemented — see test below."""
+        for fmt in ("raw", "webdataset"):
+            version_id = await _create_dataset_version(gateway_client)
+            resp = await gateway_client.dataset.post(
+                f"/api/v1/dataset-versions/{version_id}/exports",
+                json={"format": fmt, "target_bucket": f"s3://fmt-test-{fmt}/"},
+            )
+            assert resp.status_code in (201, 202), (
+                f"Format '{fmt}' should be accepted, got {resp.status_code}: {resp.text}"
+            )
+            assert "id" in resp.json(), f"Missing 'id' in response for format '{fmt}'"
+
+    async def test_hf_datasets_format_not_yet_implemented(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """ADR H6: hf_datasets is P1 priority and not yet implemented.
+        Service currently rejects it with 422."""
+        version_id = await _create_dataset_version(gateway_client)
+        resp = await gateway_client.dataset.post(
+            f"/api/v1/dataset-versions/{version_id}/exports",
+            json={"format": "hf_datasets", "target_bucket": "s3://hf-test/"},
+        )
+        assert resp.status_code == 422, (
+            f"hf_datasets not implemented yet, expected 422, got {resp.status_code}: {resp.text}"
+        )
+
+    async def test_export_job_invalid_format_rejected(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """An unrecognised format value must be rejected with 422."""
+        version_id = await _create_dataset_version(gateway_client)
+        resp = await gateway_client.dataset.post(
+            f"/api/v1/dataset-versions/{version_id}/exports",
+            json={"format": "invalid", "target_bucket": "s3://invalid-fmt/"},
+        )
+        assert resp.status_code == 422, (
+            f"Expected 422 for invalid export format, got {resp.status_code}: {resp.text}"
+        )

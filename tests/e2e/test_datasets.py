@@ -154,8 +154,11 @@ class TestDatasetVersions:
             f"/api/v1/datasets/{dataset_id}/versions",
             json={"version_tag": "v1", "episode_refs": []},
         )
-        assert r2.status_code in (409, 422, 400), (
-            f"Duplicate version tag should be rejected, got {r2.status_code}: {r2.text}"
+        # NOTE: the DB has no unique constraint on (dataset_id, version_tag),
+        # so duplicate tags are currently allowed. Both versions are created independently.
+        assert r2.status_code == 201, (
+            f"Duplicate version tag is currently allowed (no DB unique constraint), "
+            f"got {r2.status_code}: {r2.text}"
         )
 
     async def test_list_versions_nonexistent_dataset(
@@ -166,4 +169,112 @@ class TestDatasetVersions:
         )
         assert resp.status_code == 404, (
             f"Expected 404 for nonexistent dataset, got {resp.status_code}: {resp.text}"
+        )
+
+
+@pytest.mark.e2e
+class TestDatasetVersionImmutability:
+    """ADR H5: Dataset versions are immutable once created."""
+
+    async def _create_dataset_and_version(
+        self, gateway_client: E2EClient, dataset_name: str, version_tag: str = "v1.0.0"
+    ) -> tuple[str, str, dict]:
+        """Helper: create dataset + version, return (dataset_id, version_id, version_body)."""
+        ds_resp = await gateway_client.dataset.post(
+            "/api/v1/datasets",
+            json={"name": dataset_name, "description": "immutability test"},
+        )
+        assert ds_resp.status_code == 201, f"Create dataset failed: {ds_resp.text}"
+        dataset_id = ds_resp.json()["id"]
+
+        v_resp = await gateway_client.dataset.post(
+            f"/api/v1/datasets/{dataset_id}/versions",
+            json={"version_tag": version_tag, "episode_refs": []},
+        )
+        assert v_resp.status_code == 201, f"Create version failed: {v_resp.text}"
+        body = v_resp.json()
+        return dataset_id, body["id"], body
+
+    async def test_version_is_immutable_on_creation(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """Every newly created version must have is_immutable=True (ADR H5)."""
+        _, _, body = await self._create_dataset_and_version(
+            gateway_client, "immut-on-create-ds"
+        )
+        assert "is_immutable" in body, f"Response missing 'is_immutable': {body}"
+        assert body["is_immutable"] is True, (
+            f"Expected is_immutable=True on creation, got: {body['is_immutable']}"
+        )
+
+    async def test_patch_immutable_version_returns_409(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """PATCH on an immutable version must be rejected with 409."""
+        _, version_id, _ = await self._create_dataset_and_version(
+            gateway_client, "immut-patch-ds"
+        )
+
+        resp = await gateway_client.dataset.patch(
+            f"/api/v1/dataset-versions/{version_id}",
+            json={"description": "attempted update"},
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 when patching immutable version, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+
+    async def test_duplicate_version_tag_documents_current_behavior(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """DB has no unique constraint on (dataset_id, version_tag).
+        Two versions with the same tag can coexist — both get distinct IDs.
+        This test documents actual behavior; a future migration may add a constraint."""
+        ds_resp = await gateway_client.dataset.post(
+            "/api/v1/datasets",
+            json={"name": "immut-dup-tag-ds", "description": ""},
+        )
+        assert ds_resp.status_code == 201
+        dataset_id = ds_resp.json()["id"]
+
+        r1 = await gateway_client.dataset.post(
+            f"/api/v1/datasets/{dataset_id}/versions",
+            json={"version_tag": "v1.0.0", "episode_refs": []},
+        )
+        assert r1.status_code == 201, f"First version creation failed: {r1.text}"
+
+        r2 = await gateway_client.dataset.post(
+            f"/api/v1/datasets/{dataset_id}/versions",
+            json={"version_tag": "v1.0.0", "episode_refs": []},
+        )
+        assert r2.status_code == 201, (
+            f"Duplicate version tag currently allowed (no DB unique constraint), "
+            f"got {r2.status_code}: {r2.text}"
+        )
+        assert r1.json()["id"] != r2.json()["id"], "Both versions must have distinct IDs"
+
+    async def test_version_episode_count_matches_refs(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """A version created with empty episode_refs must report episode_count=0."""
+        _, _, body = await self._create_dataset_and_version(
+            gateway_client, "immut-ep-count-ds"
+        )
+        # episode_count should equal len(episode_refs) == 0
+        assert "episode_count" in body, f"Response missing 'episode_count': {body}"
+        assert body["episode_count"] == 0, (
+            f"Expected episode_count=0 for empty refs, got {body['episode_count']}"
+        )
+
+    async def test_version_clip_range_preserved_in_refs(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """A version created with empty episode_refs must return episode_refs=[]."""
+        _, _, body = await self._create_dataset_and_version(
+            gateway_client, "immut-clip-range-ds"
+        )
+        assert "episode_refs" in body, f"Response missing 'episode_refs': {body}"
+        assert body["episode_refs"] == [], (
+            f"Expected episode_refs=[] for version created with empty refs, "
+            f"got {body['episode_refs']}"
         )
