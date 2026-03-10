@@ -59,6 +59,21 @@ class McapFrameExtractor:
                     })
         return topics
 
+    def get_time_range(self) -> tuple[int, int] | None:
+        """Get the time range of the MCAP file in nanoseconds.
+
+        Returns:
+            Tuple of (start_time_ns, end_time_ns) or None if not available
+        """
+        reader = self._get_reader()
+        summary = reader.get_summary()
+
+        if summary and summary.statistics:
+            start = summary.statistics.message_start_time
+            end = summary.statistics.message_end_time
+            return (start, end)
+        return None
+
     def extract_frame(
         self,
         topic: str,
@@ -76,6 +91,15 @@ class McapFrameExtractor:
             FrameResult with JPEG data or None if no frame found
         """
         reader = self._get_reader()
+
+        # Adjust timestamp to valid range if needed
+        time_range = self.get_time_range()
+        if time_range:
+            start_time, end_time = time_range
+            if target_timestamp_ns < start_time:
+                target_timestamp_ns = start_time
+            elif target_timestamp_ns > end_time:
+                target_timestamp_ns = end_time
 
         best_frame: bytes | None = None
         best_timestamp: int | None = None
