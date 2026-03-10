@@ -8,6 +8,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { DatasetsPage } from "@/pages/DatasetsPage";
 import { ExportPage } from "@/pages/ExportPage";
 import { UploadPage } from "@/pages/UploadPage";
+import { PreviewPage } from "@/pages/PreviewPage";
 import { ToastContainer } from "@/components/ToastContainer";
 
 const queryClient = new QueryClient({
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="tasks" element={<TasksPage />} />
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="export" element={<ExportPage />} />
+            <Route path="preview/:episodeId" element={<PreviewPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

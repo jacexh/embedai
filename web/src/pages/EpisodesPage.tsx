@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useEpisodes, useDeleteEpisode } from "@/api/episodes";
 import { useCreateTask } from "@/api/tasks";
 import { EpisodeCard } from "@/components/EpisodeCard";
@@ -40,6 +41,7 @@ export function EpisodesPage() {
 
   const createTask = useCreateTask();
   const deleteEpisode = useDeleteEpisode();
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const hasActiveFilter = !!(status || format || minQuality);
 
@@ -59,6 +61,10 @@ export function EpisodesPage() {
     } catch {
       // error toast shown by apiClient interceptor
     }
+  };
+
+  const handlePreview = (episodeId: string) => {
+    navigate(`/preview/${episodeId}`);
   };
 
   return (
@@ -143,6 +149,7 @@ export function EpisodesPage() {
                 onCreateTask={handleCreateTask}
                 onDelete={handleDelete}
                 onDetail={setDetailId}
+                onPreview={handlePreview}
               />
             ))}
           </div>

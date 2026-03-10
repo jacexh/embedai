@@ -6,6 +6,7 @@ interface EpisodeCardProps {
   onCreateTask?: (episodeId: string) => void;
   onDelete?: (episodeId: string) => void;
   onDetail?: (episodeId: string) => void;
+  onPreview?: (episodeId: string) => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -26,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
   uploading: "text-gray-500",
 };
 
-export function EpisodeCard({ episode, onCreateTask, onDelete, onDetail }: EpisodeCardProps) {
+export function EpisodeCard({ episode, onCreateTask, onDelete, onDetail, onPreview }: EpisodeCardProps) {
   const duration = episode.duration_seconds
     ? `${Math.floor(episode.duration_seconds / 60)}m ${Math.round(episode.duration_seconds % 60)}s`
     : "—";
@@ -71,6 +72,17 @@ export function EpisodeCard({ episode, onCreateTask, onDelete, onDetail }: Episo
 
       {/* Action buttons */}
       <div className="px-4 pb-3 flex gap-2">
+        {episode.status === "ready" && onPreview && episode.format === "mcap" && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPreview(episode.id);
+            }}
+            className="flex-1 px-3 py-1.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+          >
+            预览
+          </button>
+        )}
         {episode.status === "ready" && onCreateTask && (
           <button
             onClick={() => onCreateTask(episode.id)}
