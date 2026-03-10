@@ -97,7 +97,7 @@ class CreateTaskRequest(BaseModel):
 
 
 class AssignRequest(BaseModel):
-    user_id: str
+    user_id: uuid.UUID
 
 
 class RejectRequest(BaseModel):
@@ -266,7 +266,7 @@ async def assign_task(
 
     _assert_transition(task.status, "assigned")
 
-    task.assigned_to = uuid.UUID(body.user_id)
+    task.assigned_to = body.user_id
     task.status = "assigned"
     task.updated_at = datetime.now(timezone.utc)
 
