@@ -7,15 +7,9 @@ _mcap_cache: McapFileCache | None = None
 
 
 def get_mcap_cache() -> McapFileCache:
-    """Return the application-level MCAP file cache.
-
-    If the cache has not been initialised via ``init_mcap_cache`` (e.g. in
-    unit tests that bypass the FastAPI lifespan), a default instance is
-    created lazily so that tests work without special setup.
-    """
-    global _mcap_cache
+    """Return the application-level MCAP file cache."""
     if _mcap_cache is None:
-        _mcap_cache = McapFileCache(max_size=5, ttl_seconds=300)
+        raise RuntimeError("McapFileCache not initialized — call init_mcap_cache() first")
     return _mcap_cache
 
 

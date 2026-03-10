@@ -16,6 +16,7 @@ from jose import jwt
 from app.config import settings
 from app.main import app
 from app.models import Dataset, DatasetVersion, Episode, Topic
+from app.services.mcap_cache import McapFileCache
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,19 @@ def make_token(project_id: str = TEST_PROJECT_ID, user_id: str = TEST_USER_ID, r
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {make_token()}"}
+
+
+# ---------------------------------------------------------------------------
+# Cache init
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def init_cache(tmp_path):
+    """Initialize McapFileCache for tests."""
+    import app.services.cache_registry as registry
+    registry._mcap_cache = McapFileCache(max_size=2, ttl_seconds=300, cache_dir=str(tmp_path))
+    yield
+    registry._mcap_cache = None
 
 
 # ---------------------------------------------------------------------------

@@ -391,7 +391,7 @@ class TestGetFrameEndpoint:
         with patch("app.routers.episodes.get_mcap_cache") as mock_get_cache, \
              patch("app.routers.episodes.StorageClient"), \
              patch("app.routers.episodes.McapFrameExtractor") as mock_extractor, \
-             patch("os.unlink") as mock_unlink:
+             patch("app.services.mcap_cache.os.unlink") as mock_unlink:
 
             mock_cache = AsyncMock()
             mock_cache.get_or_download = AsyncMock(return_value="/tmp/cached_ep.mcap")
