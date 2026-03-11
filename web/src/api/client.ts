@@ -13,6 +13,11 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (r) => r,
   (err) => {
+    // Silently ignore requests cancelled by AbortController (e.g. when the user
+    // seeks/plays and the previous frame request is superseded).
+    if (axios.isCancel(err)) {
+      return Promise.reject(err);
+    }
     if (err.response?.status === 401) {
       useAuthStore.getState().logout();
       window.location.href = "/login";

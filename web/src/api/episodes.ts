@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { apiClient } from "./client";
 
 export interface Episode {
@@ -162,9 +161,12 @@ export async function getFrame(
   options: FrameOptions,
   signal?: AbortSignal
 ): Promise<FrameResult> {
+  // The API expects an integer nanosecond timestamp. Float-point arithmetic in
+  // the animation loop produces values like 216737999.9999994 which FastAPI's
+  // `int` parameter validator rejects with 422.
   const params = new URLSearchParams({
     topic: options.topic,
-    timestamp: String(options.timestamp),
+    timestamp: String(Math.round(options.timestamp)),
   });
 
   const response = await apiClient.get<ArrayBuffer>(

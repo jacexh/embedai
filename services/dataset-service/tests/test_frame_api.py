@@ -379,6 +379,46 @@ class TestGetFrameEndpoint:
                 str(ep.id), ep.storage_path, mock_storage_cls.return_value
             )
 
+    def test_frame_extraction_offloaded_to_thread(self, client, auth_headers, mock_db):
+        """Frame extraction must run in asyncio.to_thread to avoid blocking the event loop.
+
+        Synchronous CPU-bound operations (iterating all MCAP messages) inside an
+        async FastAPI endpoint block the single uvicorn event loop, starving other
+        requests and causing ERR_INSUFFICIENT_RESOURCES on the client side.
+        """
+        from unittest.mock import AsyncMock
+
+        ep = make_episode(fmt="mcap", status="ready")
+        ep.storage_path = "s3://bucket/test.mcap"
+
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = ep
+        mock_db.execute = AsyncMock(return_value=result)
+
+        mock_frame = MagicMock()
+        mock_frame.data = b"jpeg_data"
+        mock_frame.timestamp_ns = 1000000000
+        mock_frame.format = "jpeg"
+
+        with patch("app.routers.episodes.get_mcap_cache") as mock_get_cache, \
+             patch("app.routers.episodes.StorageClient"), \
+             patch("app.routers.episodes.asyncio") as mock_asyncio:
+
+            mock_cache = AsyncMock()
+            mock_cache.get_or_download = AsyncMock(return_value="/tmp/test.mcap")
+            mock_get_cache.return_value = mock_cache
+
+            # asyncio.to_thread must be awaited, so it needs to be an AsyncMock
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_frame)
+
+            resp = client.get(
+                f"/api/v1/episodes/{ep.id}/frame?topic=/camera/image&timestamp=1000000000",
+                headers=auth_headers,
+            )
+
+            assert resp.status_code == 200
+            mock_asyncio.to_thread.assert_called_once()
+
     def test_get_frame_does_not_delete_cached_file(self, client, auth_headers, mock_db):
         """Endpoint 不调用 os.unlink — 缓存管理文件生命周期"""
         ep = make_episode(fmt="mcap", status="ready")

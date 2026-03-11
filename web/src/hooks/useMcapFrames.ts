@@ -16,8 +16,11 @@ interface FrameCache {
 const CACHE_KEY = (topic: string, timestamp: number): string =>
   `${topic}_${Math.floor(timestamp / 100_000_000)}`; // 100ms buckets
 
-// Limit concurrent requests to avoid browser resource exhaustion
-const MAX_CONCURRENT = 3;
+// Limit concurrent requests to avoid browser resource exhaustion.
+// Chrome allows 6 connections per host (HTTP/1.1). With multiple image topics
+// (e.g. 6 cameras) and overlapping loadFrames calls (initial + debounced), peak
+// connections could reach MAX_CONCURRENT * 2. Keep at 2 to stay well under 6.
+const MAX_CONCURRENT = 2;
 
 async function runWithConcurrency<T>(
   items: T[],
@@ -65,7 +68,9 @@ export function useMcapFrames({ episodeId, topics }: UseMcapFramesOptions) {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      abortControllerRef.current = new AbortController();
+      // Capture controller locally so stale callbacks never read the updated ref
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       setIsLoading(true);
 
@@ -75,6 +80,12 @@ export function useMcapFrames({ episodeId, topics }: UseMcapFramesOptions) {
         await runWithConcurrency(
           topics,
           async (topic) => {
+            // If this call was superseded before this topic's slot opened, skip it.
+            // Without this guard, queued topics from a stale loadFrames call would
+            // start using the new controller's signal, causing duplicate concurrent
+            // requests that exhaust the browser's per-host connection limit.
+            if (controller.signal.aborted) return;
+
             const cacheKey = CACHE_KEY(topic, timestamp);
 
             // Check cache first
@@ -84,11 +95,13 @@ export function useMcapFrames({ episodeId, topics }: UseMcapFramesOptions) {
             }
 
             try {
-              const result = await getFrame(
-                episodeId,
-                { topic, timestamp },
-                abortControllerRef.current?.signal
-              );
+              // Don't pass the signal to the HTTP layer. Passing it causes in-flight
+              // requests to be cancelled when a new loadFrames call fires during
+              // playback, which means frames never update (every request gets
+              // cancelled before completing). The abort guard above already prevents
+              // QUEUED (not-yet-started) topics from starting new requests — that is
+              // sufficient to avoid connection exhaustion.
+              const result = await getFrame(episodeId, { topic, timestamp });
               newFrames.set(topic, result.blobUrl);
               cacheRef.current[cacheKey] = result.blobUrl;
             } catch (error) {
@@ -103,9 +116,16 @@ export function useMcapFrames({ episodeId, topics }: UseMcapFramesOptions) {
           MAX_CONCURRENT
         );
 
-        setFrames(newFrames);
+        // Update state whenever we got results, even if a newer call is pending.
+        // The abort guard above already ensures stale calls don't FIRE new requests;
+        // allowing their completed results through keeps the animation responsive.
+        if (newFrames.size > 0) {
+          setFrames(newFrames);
+        }
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     },
     [episodeId, topics]

@@ -1,6 +1,7 @@
 """Episode query API — Task 4.1."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -214,6 +215,20 @@ async def get_stream_token(
     return {"stream_token": token, "expires_in": expires_in}
 
 
+def _extract_frame_sync(
+    mcap_path: str, topic: str, timestamp: int
+) -> "FrameResult | None":
+    """Run synchronous (CPU-bound) frame extraction. Called via asyncio.to_thread."""
+    from app.services.frame_extractor import FrameResult  # local import for type hint
+
+    with McapFrameExtractor(mcap_path) as extractor:
+        time_range = extractor.get_time_range()
+        mcap_start_time_ns = time_range[0] if time_range else 0
+        return extractor.extract_frame(
+            topic, timestamp, time_offset_ns=mcap_start_time_ns
+        )
+
+
 @router.get("/{episode_id}/frame")
 async def get_frame(
     episode_id: uuid.UUID,
@@ -250,14 +265,13 @@ async def get_frame(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"failed to retrieve episode file: {exc}") from exc
 
+    # Run synchronous frame extraction in a thread pool to avoid blocking the
+    # asyncio event loop. McapFrameExtractor.extract_frame iterates all MCAP
+    # messages (CPU-bound); if called directly in an async endpoint it stalls
+    # uvicorn's single event loop and prevents other requests from being accepted,
+    # which causes ERR_INSUFFICIENT_RESOURCES on the client.
     try:
-        with McapFrameExtractor(mcap_path) as extractor:
-            time_range = extractor.get_time_range()
-            mcap_start_time_ns = time_range[0] if time_range else 0
-
-            frame = extractor.extract_frame(
-                topic, timestamp, time_offset_ns=mcap_start_time_ns
-            )
+        frame = await asyncio.to_thread(_extract_frame_sync, mcap_path, topic, timestamp)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"frame extraction failed: {exc}") from exc
 

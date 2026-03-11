@@ -13,7 +13,7 @@ function useDebounce<T extends (...args: any[]) => void>(
   fn: T,
   delay: number
 ): T {
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   return useCallback(
     (...args: Parameters<T>) => {
@@ -93,8 +93,8 @@ export function PreviewPage() {
       lastFrameTimeRef.current = timestamp;
 
       setCurrentTime((prev) => {
-        const newTime = prev + deltaTime * playbackRate * 1_000_000_000;
-        const maxTime = duration * 1_000_000_000;
+        const newTime = Math.round(prev + deltaTime * playbackRate * 1_000_000_000);
+        const maxTime = Math.round(duration * 1_000_000_000);
 
         if (newTime >= maxTime) {
           setIsPlaying(false);
@@ -120,7 +120,7 @@ export function PreviewPage() {
   // Load frames when currentTime changes
   // During playback, only load if we've advanced >= 200ms since last load
   useEffect(() => {
-    const PLAYBACK_FRAME_INTERVAL_NS = 200_000_000; // 200ms in nanoseconds
+    const PLAYBACK_FRAME_INTERVAL_NS = 500_000_000; // 500ms in nanoseconds
     if (
       !isPlaying ||
       lastLoadedTimeRef.current < 0 ||

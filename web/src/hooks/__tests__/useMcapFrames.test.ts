@@ -145,6 +145,38 @@ describe("useMcapFrames", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
+    it("should update frames from in-flight requests even after a new loadFrames call starts", async () => {
+      // This is the playback regression: when loadFrames fires faster than the backend
+      // responds, every request gets cancelled before completing → frames never update.
+      // The fix: don't pass the AbortSignal to the HTTP layer; only skip QUEUED topics.
+      // The setFrames guard must also change from `!controller.signal.aborted` to
+      // `newFrames.size > 0` so that results from in-flight requests are applied.
+      // Mock resolves after 100ms and ignores the signal.
+      mockGetFrame.mockImplementation(
+        async () =>
+          new Promise<{ blobUrl: string; timestampNs: number }>((resolve) => {
+            setTimeout(() => resolve({ blobUrl: "blob:inflight", timestampNs: 0 }), 100);
+          })
+      );
+
+      const { result } = renderHook(() =>
+        useMcapFrames({ episodeId: "ep1", topics: ["/cam"] })
+      );
+
+      // Use act(async) so React flushes state updates from async continuations
+      await act(async () => {
+        result.current.loadFrames(0); // call 1: request starts, completes in 100ms
+        await new Promise((r) => setTimeout(r, 30)); // 30ms in: abort call 1 by...
+        result.current.loadFrames(1_000_000_000); // call 2: aborts controller_1
+        // wait until call 1's 100ms request has completed (70ms more = 100ms total)
+        await new Promise((r) => setTimeout(r, 80));
+      });
+
+      // Call 1's in-flight request completed (110ms after start) despite its
+      // controller being aborted. frames must have been updated.
+      expect(result.current.frames.size).toBe(1);
+    });
+
     it("should cancel pending requests on new load", async () => {
       const abortSpy = vi.spyOn(AbortController.prototype, "abort");
       mockGetFrame.mockImplementation(() => new Promise(() => {})); // Never resolve
@@ -355,7 +387,7 @@ describe("useMcapFrames", () => {
         await result.current.loadFrames(1000000000);
       });
 
-      expect(maxActiveRequests).toBeLessThanOrEqual(3);
+      expect(maxActiveRequests).toBeLessThanOrEqual(2);
     });
 
     it("should handle rapid successive calls", async () => {
@@ -382,6 +414,70 @@ describe("useMcapFrames", () => {
       await waitFor(() => {
         expect(mockGetFrame).toHaveBeenCalled();
       });
+    });
+
+    it("stale loadFrames should not exceed MAX_CONCURRENT using new controller signal", async () => {
+      // Regression test for ERR_INSUFFICIENT_RESOURCES:
+      // When loadFrames is called again while a previous call is still running its
+      // runWithConcurrency queue, the stale call's queued topics must NOT use the
+      // new call's AbortController signal (which is not yet aborted).
+      // If they do, concurrent requests exceed MAX_CONCURRENT and Chrome hits its
+      // per-host connection limit → ERR_INSUFFICIENT_RESOURCES.
+      let concurrent = 0;
+      let maxConcurrent = 0;
+
+      mockGetFrame.mockImplementation(
+        async (_id: string, _opts: any, signal?: AbortSignal) => {
+          // Skip if already cancelled before we start
+          if (signal?.aborted) {
+            const err = new Error("canceled");
+            (err as any).__CANCEL__ = true;
+            throw err;
+          }
+
+          concurrent++;
+          maxConcurrent = Math.max(maxConcurrent, concurrent);
+
+          return new Promise<{ blobUrl: string; timestampNs: number }>(
+            (resolve, reject) => {
+              const timer = setTimeout(() => {
+                concurrent--;
+                resolve({ blobUrl: "blob:test", timestampNs: 0 });
+              }, 30);
+
+              signal?.addEventListener("abort", () => {
+                clearTimeout(timer);
+                concurrent--;
+                const err = new Error("canceled");
+                (err as any).__CANCEL__ = true;
+                reject(err);
+              });
+            }
+          );
+        }
+      );
+
+      // 3 topics: A,B start immediately (MAX_CONCURRENT=2), C queues.
+      // When loadFrames(t2) is called, t1's controller is aborted.
+      // With the BUG: C from t1 starts using t2's controller (not aborted) → concurrent=3+
+      // With the FIX: C from t1 checks its own aborted controller → skips.
+      //   A,B from t1 are already in-flight (no HTTP abort) + A,B from t2 → peak ≤ 4 (2×MAX_CONCURRENT)
+      const topics = ["/a", "/b", "/c"];
+      const { result } = renderHook(() =>
+        useMcapFrames({ episodeId: "ep1", topics })
+      );
+
+      act(() => {
+        result.current.loadFrames(0); // t1: A,B start; C queues
+        result.current.loadFrames(1_000_000_000); // t2: aborts t1, starts fresh
+      });
+
+      await waitFor(() => !result.current.isLoading, { timeout: 2000 });
+
+      // Peak concurrency must not exceed 2×MAX_CONCURRENT (= 4):
+      // at most MAX_CONCURRENT in-flight from t1 + MAX_CONCURRENT starting fresh in t2.
+      // C from t1 must be skipped (abort guard), so concurrent never reaches 5+.
+      expect(maxConcurrent).toBeLessThanOrEqual(4);
     });
   });
 
@@ -430,17 +526,17 @@ describe("useMcapFrames", () => {
         })
       );
 
-      // These timestamps should fall in different 100ms buckets
+      // These timestamps fall in different 100ms buckets (each 100ms = 100_000_000 ns apart)
       await act(async () => {
         await result.current.loadFrames(1000000000);
       });
 
       await act(async () => {
-        await result.current.loadFrames(1000100000);
+        await result.current.loadFrames(1100000000);
       });
 
       await act(async () => {
-        await result.current.loadFrames(1000200000);
+        await result.current.loadFrames(1200000000);
       });
 
       expect(mockGetFrame).toHaveBeenCalledTimes(3);
