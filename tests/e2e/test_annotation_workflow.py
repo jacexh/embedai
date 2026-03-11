@@ -11,6 +11,11 @@ import pytest
 
 from .helpers import E2EClient
 
+import httpx
+
+GATEWAY_URL = "http://localhost:8000"
+TASK_SERVICE_URL = "http://localhost:8002"
+
 
 async def _create_task(client: E2EClient, task_type: str = "bbox2d") -> str:
     """Create a task and return its task_id."""
@@ -235,3 +240,263 @@ class TestTaskToDatasetVersionPipeline:
             "Task approval must persist throughout the dataset version creation step"
         )
         assert version_body.get("id"), "Dataset version id must not be empty"
+
+
+@pytest.mark.e2e
+class TestAnnotationResult:
+    """Submit stores annotation_result; validation; re-submission overwrites."""
+
+    async def test_submit_with_quality_stores_annotation_result(
+        self, gateway_client: E2EClient
+    ) -> None:
+        # Create and assign task
+        task_id = await _create_task(gateway_client)
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        assert resp.status_code == 200
+
+        # Submit with quality + notes
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据", "notes": "clean sensor data"},
+        )
+        assert resp.status_code == 200, f"Submit failed: {resp.text}"
+        body = resp.json()
+        assert body["status"] == "submitted"
+        assert body["annotation_result"] is not None
+        assert body["annotation_result"]["quality"] == "优质数据"
+        assert body["annotation_result"]["notes"] == "clean sensor data"
+
+    async def test_submit_without_notes_stores_null_notes(
+        self, gateway_client: E2EClient
+    ) -> None:
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "可用数据"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["annotation_result"]["quality"] == "可用数据"
+        assert resp.json()["annotation_result"]["notes"] is None
+
+    async def test_submit_missing_quality_returns_422(
+        self, gateway_client: E2EClient
+    ) -> None:
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={},
+        )
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+
+    async def test_submit_invalid_quality_returns_422(
+        self, gateway_client: E2EClient
+    ) -> None:
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "bad_value"},
+        )
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+
+    async def test_submit_no_body_returns_422(
+        self, gateway_client: E2EClient
+    ) -> None:
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+
+    async def test_rejected_task_can_resubmit_directly(
+        self, gateway_client: E2EClient
+    ) -> None:
+        # Create → assign → submit → reject
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "可用数据"},
+        )
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/reject",
+            json={"comment": "needs correction"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "rejected"
+
+        # Re-submit directly from rejected (no re-assign needed)
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据", "notes": "corrected"},
+        )
+        assert resp.status_code == 200, f"Re-submit from rejected failed: {resp.text}"
+        body = resp.json()
+        assert body["status"] == "submitted"
+        assert body["annotation_result"]["quality"] == "优质数据"
+        assert body["annotation_result"]["notes"] == "corrected"
+
+    async def test_resubmit_overwrites_annotation_result(
+        self, gateway_client: E2EClient
+    ) -> None:
+        # submit with quality A, reject, re-submit with quality B
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "问题数据", "notes": "first attempt"},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/reject",
+            json={"comment": "fix it"},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据", "notes": "second attempt"},
+        )
+
+        # Verify via GET that result is overwritten
+        resp = await gateway_client.task.get(f"/api/v1/tasks/{task_id}")
+        assert resp.status_code == 200
+        result = resp.json()["annotation_result"]
+        assert result["quality"] == "优质数据", f"Expected 优质数据, got {result['quality']}"
+        assert result["notes"] == "second attempt"
+
+    async def test_submitted_task_cannot_resubmit(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """Spec item 7: submitted → submitted is blocked (409 from state machine)."""
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据"},
+        )
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "可用数据"},
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 (state machine) resubmitting a submitted task, got {resp.status_code}: {resp.text}"
+        )
+
+    async def test_approved_task_cannot_submit(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """Spec item 8: approved → submitted is blocked (409 from state machine)."""
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据"},
+        )
+        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/approve")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "可用数据"},
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 (state machine) submitting an approved task, got {resp.status_code}: {resp.text}"
+        )
+
+    async def test_annotator_cannot_submit_others_task(
+        self, gateway_client: E2EClient
+    ) -> None:
+        """Spec item 9: annotator submitting another user's task gets 403."""
+        import uuid as _uuid
+
+        project_id = gateway_client.project_id
+        unique = _uuid.uuid4().hex[:8]
+
+        # Register a second annotator user
+        async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=30.0) as raw:
+            resp = await raw.post(
+                "/auth/register",
+                json={
+                    "email": f"annotator2_{unique}@test.local",
+                    "password": "ann_pass_123",
+                    "name": f"Annotator Two {unique}",
+                    "role": "annotator",
+                    "project_id": project_id,
+                },
+            )
+            assert resp.status_code in (200, 201), f"Register failed: {resp.text}"
+            resp2 = await raw.post(
+                "/auth/login",
+                json={"email": f"annotator2_{unique}@test.local", "password": "ann_pass_123"},
+            )
+            assert resp2.status_code == 200
+            token2 = resp2.json()["token"]
+
+        # Create task and assign to gateway_client (admin user)
+        task_id = await _create_task(gateway_client)
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        assert resp.status_code == 200
+
+        # Try to submit as annotator2 — should get 403
+        headers2 = {"Authorization": f"Bearer {token2}"}
+        async with httpx.AsyncClient(
+            base_url=TASK_SERVICE_URL, headers=headers2, timeout=30.0
+        ) as ts2:
+            resp = await ts2.post(
+                f"/api/v1/tasks/{task_id}/submit",
+                json={"quality": "优质数据"},
+            )
+        assert resp.status_code == 403, (
+            f"Expected 403 when annotator submits another's task, got {resp.status_code}: {resp.text}"
+        )
+
+    async def test_rejected_to_assigned_still_valid(
+        self, gateway_client: E2EClient
+    ) -> None:
+        # Engineer can still re-assign a rejected task
+        task_id = await _create_task(gateway_client)
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "可用数据"},
+        )
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/reject",
+            json={"comment": "redo"},
+        )
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/assign",
+            json={"user_id": gateway_client.user_id},
+        )
+        assert resp.status_code == 200, f"Re-assign from rejected failed: {resp.text}"
+        assert resp.json()["status"] == "assigned"
