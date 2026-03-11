@@ -4,12 +4,13 @@ State machine (ADR H4):
   created → assigned → submitted → approved
                     ↘            ↗
                      rejected → assigned  (re-assign for rework)
+                     rejected → submitted (annotator direct re-submit)
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -32,7 +33,7 @@ _TRANSITIONS: dict[str, set[str]] = {
     "created": {"assigned"},
     "assigned": {"submitted", "created"},  # created = unassign
     "submitted": {"approved", "rejected"},
-    "rejected": {"assigned"},
+    "rejected": {"assigned", "submitted"},  # submitted = direct re-submit by annotator
     "approved": set(),
 }
 
@@ -104,6 +105,11 @@ class RejectRequest(BaseModel):
     comment: str | None = None
 
 
+class SubmitTaskRequest(BaseModel):
+    quality: Literal["优质数据", "可用数据", "问题数据"]
+    notes: str | None = None
+
+
 class TaskOut(BaseModel):
     id: str
     project_id: str
@@ -119,6 +125,7 @@ class TaskOut(BaseModel):
     created_by: str | None
     created_at: str | None
     updated_at: str | None
+    annotation_result: dict | None = None
 
 
 class UserWorkloadOut(BaseModel):
@@ -151,6 +158,7 @@ def _task_out(task: AnnotationTask) -> dict:
         "created_by": str(task.created_by) if task.created_by else None,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        "annotation_result": task.annotation_result,
     }
 
 
@@ -279,6 +287,7 @@ async def assign_task(
 @router.post("/tasks/{task_id}/submit", response_model=TaskOut)
 async def submit_task(
     task_id: uuid.UUID,
+    body: SubmitTaskRequest,
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -299,6 +308,7 @@ async def submit_task(
     _assert_transition(task.status, "submitted")
 
     task.status = "submitted"
+    task.annotation_result = {"quality": body.quality, "notes": body.notes}
     task.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
