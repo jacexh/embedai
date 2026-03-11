@@ -86,9 +86,9 @@ export function useCreateTask() {
   });
 }
 
-interface SubmitTaskPayload {
+export interface SubmitTaskPayload {
   taskId: string;
-  quality: string;
+  quality: "优质数据" | "可用数据" | "问题数据";
   notes?: string;
 }
 
@@ -119,7 +119,10 @@ export function useApproveTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) => apiClient.post(`/tasks/${taskId}/approve`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: (_, taskId) => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+    },
   });
 }
 
@@ -128,6 +131,9 @@ export function useRejectTask() {
   return useMutation({
     mutationFn: ({ taskId, comment }: { taskId: string; comment?: string }) =>
       apiClient.post(`/tasks/${taskId}/reject`, { comment }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: (_, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+    },
   });
 }
