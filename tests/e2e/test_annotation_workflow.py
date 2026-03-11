@@ -30,7 +30,10 @@ async def _run_full_approve(client: E2EClient, task_id: str) -> None:
     )
     assert resp.status_code == 200, f"Assign failed: {resp.text}"
 
-    resp = await client.task.post(f"/api/v1/tasks/{task_id}/submit")
+    resp = await client.task.post(
+        f"/api/v1/tasks/{task_id}/submit",
+        json={"quality": "优质数据"},
+    )
     assert resp.status_code == 200, f"Submit failed: {resp.text}"
 
     resp = await client.task.post(f"/api/v1/tasks/{task_id}/approve")
@@ -73,7 +76,10 @@ class TestFullApproveWorkflow:
         )
 
         # Step 5 — Submit
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据"},
+        )
         assert resp.status_code == 200, f"Submit failed: {resp.text}"
 
         # Step 6 — Verify submitted state
@@ -114,7 +120,10 @@ class TestRejectionAndReworkCycle:
         )
         assert resp.status_code == 200, f"Initial assign failed: {resp.text}"
 
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "可用数据"},
+        )
         assert resp.status_code == 200, f"Initial submit failed: {resp.text}"
 
         # Step 2 — Reject with a descriptive comment
@@ -142,7 +151,10 @@ class TestRejectionAndReworkCycle:
         )
 
         # Step 6 — Re-submit
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据"},
+        )
         assert resp.status_code == 200, f"Re-submit failed: {resp.text}"
 
         # Step 7 — Verify re-submitted status
@@ -160,7 +172,10 @@ class TestRejectionAndReworkCycle:
         )
 
         # Step 10 — Verify approved is terminal: re-submitting must fail
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据"},
+        )
         assert resp.status_code in (400, 409, 422), (
             f"Expected error trying to submit an approved task (terminal state), "
             f"got {resp.status_code}: {resp.text}"
