@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useEpisode } from "@/api/episodes";
 import { useMcapFrames } from "@/hooks/useMcapFrames";
 import { VideoGrid } from "@/components/VideoGrid";
 import { TimelineControl } from "@/components/TimelineControl";
 import { Spinner } from "@/components/Spinner";
+import { AnnotationSidebar } from "@/components/AnnotationSidebar";
 
 // Simple debounce hook
 function useDebounce<T extends (...args: any[]) => void>(
@@ -46,6 +47,8 @@ function getImageTopics(episode: ReturnType<typeof useEpisode>["data"]): string[
 export function PreviewPage() {
   const { episodeId } = useParams<{ episodeId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const taskId = searchParams.get("task_id");
   const { data: episode, isLoading: isLoadingEpisode } = useEpisode(episodeId!);
 
   // Memoize to avoid new array reference every render (would cause infinite loops)
@@ -192,20 +195,25 @@ export function PreviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate("/episodes")}
+              onClick={() => navigate(taskId ? "/tasks" : "/episodes")}
               className="text-gray-600 hover:text-gray-900"
             >
-              ← Back
+              ← {taskId ? "返回任务列表" : "Back"}
             </button>
             <h1 className="text-xl font-semibold text-gray-900">
               {episode.filename}
             </h1>
+            {taskId && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                标注任务
+              </span>
+            )}
           </div>
           <div className="text-sm text-gray-500">
             Duration: {Math.floor(duration / 60)}m {Math.floor(duration % 60)}s
@@ -213,28 +221,34 @@ export function PreviewPage() {
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="p-6 max-w-7xl mx-auto">
-        {/* Video grid */}
-        <div className="mb-6">
-          <VideoGrid
-            topics={imageTopics}
-            frames={frames}
-            isLoading={isLoadingFrames}
-          />
+      {/* Main content — flex row when annotation sidebar present */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 min-w-0 p-6 overflow-auto">
+          <div className="max-w-7xl mx-auto">
+            {/* Video grid */}
+            <div className="mb-6">
+              <VideoGrid
+                topics={imageTopics}
+                frames={frames}
+                isLoading={isLoadingFrames}
+              />
+            </div>
+
+            {/* Timeline */}
+            <TimelineControl
+              currentTime={currentTime}
+              duration={duration}
+              isPlaying={isPlaying}
+              playbackRate={playbackRate}
+              onSeek={handleSeek}
+              onPlay={handlePlay}
+              onPause={handlePause}
+              onRateChange={setPlaybackRate}
+            />
+          </div>
         </div>
 
-        {/* Timeline */}
-        <TimelineControl
-          currentTime={currentTime}
-          duration={duration}
-          isPlaying={isPlaying}
-          playbackRate={playbackRate}
-          onSeek={handleSeek}
-          onPlay={handlePlay}
-          onPause={handlePause}
-          onRateChange={setPlaybackRate}
-        />
+        {taskId && <AnnotationSidebar taskId={taskId} />}
       </div>
     </div>
   );
