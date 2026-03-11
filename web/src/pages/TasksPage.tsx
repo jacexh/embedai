@@ -4,7 +4,6 @@ import {
   useTasks,
   useAnnotatorsWithWorkload,
   useAssignTask,
-  useSubmitTask,
   type AnnotationTask,
   type UserWorkload,
 } from "@/api/tasks";
@@ -113,16 +112,10 @@ function AssignModal({
 function AnnotatorTasksView({ userId }: { userId: string }) {
   const [activeTab, setActiveTab] = useState("assigned");
   const { data: tasks = [], isLoading } = useTasks({ status: activeTab, assigned_to: userId });
-  const submitTask = useSubmitTask();
   const navigate = useNavigate();
 
-  const handleSubmit = async (taskId: string) => {
-    try {
-      await submitTask.mutateAsync(taskId);
-      toast.success("任务已提交，等待审核");
-    } catch {
-      // error toast shown by apiClient interceptor
-    }
+  const handleOpenAnnotation = (task: AnnotationTask) => {
+    navigate(`/preview/${task.episode_id}?task_id=${task.id}`);
   };
 
   return (
@@ -188,32 +181,27 @@ function AnnotatorTasksView({ userId }: { userId: string }) {
                     查看标注指南 →
                   </a>
                 )}
+                {task.annotation_result && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    已评级：<span className="font-medium text-gray-600">{task.annotation_result.quality}</span>
+                  </p>
+                )}
               </div>
-              <div className="ml-4 shrink-0 flex flex-col gap-2 items-end">
-                {task.episode_id && (
+              <div className="ml-4 shrink-0">
+                {task.episode_id && task.status === "assigned" && (
                   <button
-                    onClick={() => navigate(`/preview/${task.episode_id}`)}
-                    className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                    onClick={() => handleOpenAnnotation(task)}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                   >
-                    查看数据
+                    开始标注
                   </button>
                 )}
-                {task.status === "assigned" && (
+                {task.episode_id && task.status === "rejected" && (
                   <button
-                    onClick={() => handleSubmit(task.id)}
-                    disabled={submitTask.isPending}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    onClick={() => handleOpenAnnotation(task)}
+                    className="px-4 py-2 text-sm bg-orange-600 text-white rounded hover:bg-orange-700"
                   >
-                    {submitTask.isPending ? "提交中..." : "提交标注"}
-                  </button>
-                )}
-                {task.status === "rejected" && (
-                  <button
-                    onClick={() => handleSubmit(task.id)}
-                    disabled={submitTask.isPending}
-                    className="px-4 py-2 text-sm bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
-                  >
-                    {submitTask.isPending ? "提交中..." : "重新提交"}
+                    重新提交
                   </button>
                 )}
               </div>
