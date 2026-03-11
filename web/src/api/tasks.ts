@@ -16,6 +16,10 @@ export interface AnnotationTask {
   created_by: string | null;
   created_at: string | null;
   updated_at: string | null;
+  annotation_result: {
+    quality: "优质数据" | "可用数据" | "问题数据";
+    notes: string | null;
+  } | null;
 }
 
 export interface UserWorkload {
@@ -82,11 +86,32 @@ export function useCreateTask() {
   });
 }
 
+interface SubmitTaskPayload {
+  taskId: string;
+  quality: string;
+  notes?: string;
+}
+
 export function useSubmitTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: string) => apiClient.post(`/tasks/${taskId}/submit`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    mutationFn: ({ taskId, quality, notes }: SubmitTaskPayload) =>
+      apiClient.post(`/tasks/${taskId}/submit`, { quality, notes }),
+    onSuccess: (_, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+    },
+  });
+}
+
+export function useTask(taskId: string) {
+  return useQuery({
+    queryKey: ["task", taskId],
+    queryFn: async () => {
+      const { data } = await apiClient.get<AnnotationTask>(`/tasks/${taskId}`);
+      return data;
+    },
+    enabled: !!taskId,
   });
 }
 
