@@ -95,7 +95,10 @@ async def create_and_approve_task(client: E2EClient, episode_id: str) -> str:
     resp.raise_for_status()
 
     # Submit annotation work.
-    resp = await client.task.post(f"/api/v1/tasks/{task_id}/submit")
+    resp = await client.task.post(
+        f"/api/v1/tasks/{task_id}/submit",
+        json={"quality": "优质数据"},
+    )
     resp.raise_for_status()
 
     # Approve (requires engineer/admin role — we registered as admin).
@@ -132,7 +135,7 @@ async def trigger_export(client: E2EClient, version_id: str, format: str) -> str
     """Enqueue an async export job and return its job_id."""
     resp = await client.dataset.post(
         f"/api/v1/dataset-versions/{version_id}/exports",
-        json={"format": format},
+        json={"format": format, "target_bucket": "exports"},
     )
     resp.raise_for_status()
     return resp.json()["id"]

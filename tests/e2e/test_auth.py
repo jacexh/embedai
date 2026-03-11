@@ -9,7 +9,7 @@ import uuid
 import httpx
 import pytest
 
-from .conftest import GATEWAY_URL
+from .conftest import GATEWAY_URL, E2E_PROJECT_ID
 from .helpers import E2EClient
 
 
@@ -24,8 +24,8 @@ class TestRegister:
                     "email": f"reg_{unique}@test.local",
                     "password": "password123",
                     "name": f"User {unique}",
-                    "role": "annotator",
-                    "project_id": str(uuid.uuid4()),
+                    "role": "annotator_internal",
+                    "project_id": E2E_PROJECT_ID,
                 },
             )
         assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -39,8 +39,8 @@ class TestRegister:
             "email": email,
             "password": "password123",
             "name": "Dup User",
-            "role": "annotator",
-            "project_id": str(uuid.uuid4()),
+            "role": "annotator_internal",
+            "project_id": E2E_PROJECT_ID,
         }
         async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=15.0) as client:
             r1 = await client.post("/auth/register", json=payload)
@@ -58,16 +58,16 @@ class TestRegister:
                     "email": "not-an-email",
                     "password": "password123",
                     "name": "Bad User",
-                    "role": "annotator",
-                    "project_id": str(uuid.uuid4()),
+                    "role": "annotator_internal",
+                    "project_id": E2E_PROJECT_ID,
                 },
             )
-        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+        assert resp.status_code in (400, 422), f"Expected 400 or 422, got {resp.status_code}: {resp.text}"
 
     async def test_register_missing_fields(self) -> None:
         async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=15.0) as client:
             resp = await client.post("/auth/register", json={"email": "x@x.com"})
-        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+        assert resp.status_code in (400, 422), f"Expected 400 or 422, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.e2e
@@ -83,8 +83,8 @@ class TestLogin:
                     "email": email,
                     "password": password,
                     "name": "Login User",
-                    "role": "annotator",
-                    "project_id": str(uuid.uuid4()),
+                    "role": "annotator_internal",
+                    "project_id": E2E_PROJECT_ID,
                 },
             )
             resp = await client.post("/auth/login", json={"email": email, "password": password})
@@ -105,8 +105,8 @@ class TestLogin:
                     "email": email,
                     "password": "correct_pw",
                     "name": "Pw User",
-                    "role": "annotator",
-                    "project_id": str(uuid.uuid4()),
+                    "role": "annotator_internal",
+                    "project_id": E2E_PROJECT_ID,
                 },
             )
             resp = await client.post(

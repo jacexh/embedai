@@ -8,15 +8,14 @@ import pytest
 
 from .helpers import E2EClient
 
-
-_DUMMY_EPISODE_ID = "00000000-0000-0000-0000-000000000099"
+_SUBMIT_BODY = {"quality": "优质数据"}
 
 
 async def _make_task(client: E2EClient, task_type: str = "video_annotation") -> str:
     """Create a task and return its task_id."""
     resp = await client.task.post(
         "/api/v1/tasks",
-        json={"type": task_type, "episode_id": _DUMMY_EPISODE_ID},
+        json={"type": task_type},
     )
     assert resp.status_code == 201, f"Create task ({task_type}) failed: {resp.text}"
     return resp.json()["id"]
@@ -27,10 +26,10 @@ class TestTaskCreate:
     async def test_create_task_video_annotation(
         self, gateway_client: E2EClient
     ) -> None:
-        """Frontend useCreateTask sends type='video_annotation' with episode_id."""
+        """Frontend useCreateTask sends type='video_annotation'."""
         resp = await gateway_client.task.post(
             "/api/v1/tasks",
-            json={"type": "video_annotation", "episode_id": _DUMMY_EPISODE_ID},
+            json={"type": "video_annotation"},
         )
         assert resp.status_code == 201, (
             f"Create video_annotation task failed: {resp.text}"
@@ -43,7 +42,7 @@ class TestTaskCreate:
     async def test_create_task_with_episode_id(
         self, gateway_client: E2EClient
     ) -> None:
-        """Frontend useCreateTask passes episode_id."""
+        """Passing a non-existent episode_id returns 422 (FK violation)."""
         resp = await gateway_client.task.post(
             "/api/v1/tasks",
             json={
@@ -51,9 +50,9 @@ class TestTaskCreate:
                 "episode_id": "00000000-0000-0000-0000-000000000001",
             },
         )
-        # Either 201 or 404 (episode not found) — not 422 or 500
-        assert resp.status_code in (201, 404), (
-            f"Create task with episode_id got unexpected {resp.status_code}: {resp.text}"
+        # Episode doesn't exist → FK violation → 422 (not 500)
+        assert resp.status_code == 422, (
+            f"Create task with non-existent episode_id got unexpected {resp.status_code}: {resp.text}"
         )
 
     async def test_create_task_missing_type_returns_422(
@@ -123,7 +122,10 @@ class TestTaskLifecycle:
             json={"user_id": gateway_client.user_id},
         )
 
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         assert resp.status_code == 200, f"Submit task failed: {resp.text}"
         assert resp.json()["status"] == "submitted"
 
@@ -133,7 +135,10 @@ class TestTaskLifecycle:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
 
         resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/approve")
         assert resp.status_code == 200, f"Approve task failed: {resp.text}"
@@ -145,7 +150,10 @@ class TestTaskLifecycle:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
 
         resp = await gateway_client.task.post(
             f"/api/v1/tasks/{task_id}/reject",
@@ -160,7 +168,10 @@ class TestTaskLifecycle:
         """Cannot submit a task that hasn't been assigned."""
         task_id = await _make_task(gateway_client)
 
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         assert resp.status_code in (400, 409, 422), (
             f"Expected error for invalid transition (created→submitted), "
             f"got {resp.status_code}: {resp.text}"
@@ -210,7 +221,10 @@ class TestTaskStateMachineBoundaries:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
 
         # Send {} — body is required by FastAPI, but comment inside is optional
         resp = await gateway_client.task.post(
@@ -245,7 +259,10 @@ class TestTaskStateMachineBoundaries:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/approve")
         assert resp.status_code == 200, f"Approve failed: {resp.text}"
 
@@ -266,10 +283,16 @@ class TestTaskStateMachineBoundaries:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         await gateway_client.task.post(f"/api/v1/tasks/{task_id}/approve")
 
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         assert resp.status_code in (400, 409, 422), (
             f"Expected error re-submitting an approved task, got {resp.status_code}: {resp.text}"
         )
@@ -282,7 +305,10 @@ class TestTaskStateMachineBoundaries:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         resp = await gateway_client.task.post(
             f"/api/v1/tasks/{task_id}/reject",
             json={"comment": "needs rework"},
@@ -299,7 +325,10 @@ class TestTaskStateMachineBoundaries:
         assert resp.json()["status"] == "assigned"
 
         # Re-submit
-        resp = await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
         assert resp.status_code == 200, f"Re-submit failed: {resp.text}"
         assert resp.json()["status"] == "submitted"
 
@@ -312,7 +341,10 @@ class TestTaskStateMachineBoundaries:
             f"/api/v1/tasks/{task_id}/assign",
             json={"user_id": gateway_client.user_id},
         )
-        await gateway_client.task.post(f"/api/v1/tasks/{task_id}/submit")
+        await gateway_client.task.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json=_SUBMIT_BODY,
+        )
 
         resp = await gateway_client.task.get("/api/v1/tasks?status=submitted")
         assert resp.status_code == 200, f"List submitted tasks failed: {resp.text}"

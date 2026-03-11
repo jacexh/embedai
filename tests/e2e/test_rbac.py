@@ -51,7 +51,7 @@ async def _create_task(admin_token: str) -> str:
     async with _task_client(admin_token) as client:
         resp = await client.post(
             "/api/v1/tasks",
-            json={"type": "video_annotation", "episode_id": "00000000-0000-0000-0000-000000000099"},
+            json={"type": "video_annotation"},
         )
         assert resp.status_code == 201, f"Create task failed: {resp.text}"
     return resp.json()["id"]
@@ -70,7 +70,10 @@ async def _assign_task(admin_token: str, task_id: str, user_id: str) -> None:
 async def _submit_task(token: str, task_id: str) -> None:
     """Submit a task (called by the assigned annotator)."""
     async with _task_client(token) as client:
-        resp = await client.post(f"/api/v1/tasks/{task_id}/submit")
+        resp = await client.post(
+            f"/api/v1/tasks/{task_id}/submit",
+            json={"quality": "优质数据"},
+        )
         assert resp.status_code == 200, f"Submit task failed: {resp.text}"
 
 

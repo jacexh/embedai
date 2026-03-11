@@ -21,7 +21,7 @@ async def _create_task(client: E2EClient, task_type: str = "bbox2d") -> str:
     """Create a task and return its task_id."""
     resp = await client.task.post(
         "/api/v1/tasks",
-        json={"type": task_type, "episode_id": "00000000-0000-0000-0000-000000000099"},
+        json={"type": task_type},
     )
     assert resp.status_code == 201, f"Create task ({task_type}) failed: {resp.text}"
     return resp.json()["id"]
@@ -53,7 +53,7 @@ class TestFullApproveWorkflow:
         # Step 1 — Create task
         resp = await gateway_client.task.post(
             "/api/v1/tasks",
-            json={"type": "bbox2d", "episode_id": "00000000-0000-0000-0000-000000000099"},
+            json={"type": "bbox2d"},
         )
         assert resp.status_code == 201, f"Create task failed: {resp.text}"
         body = resp.json()
@@ -444,7 +444,7 @@ class TestAnnotationResult:
                     "email": f"annotator2_{unique}@test.local",
                     "password": "ann_pass_123",
                     "name": f"Annotator Two {unique}",
-                    "role": "annotator",
+                    "role": "annotator_internal",
                     "project_id": project_id,
                 },
             )

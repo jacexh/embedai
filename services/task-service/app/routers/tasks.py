@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user, require_role, create_stream_token
@@ -89,7 +90,7 @@ _FALLBACK_LABEL_CONFIG = """
 
 
 class CreateTaskRequest(BaseModel):
-    episode_id: str
+    episode_id: str | None = None
     type: str  # video_annotation | image_classification | ...
     dataset_version_id: str | None = None
     guideline_url: str | None = None
@@ -210,11 +211,21 @@ async def create_task(
     task.updated_at = datetime.now(timezone.utc)
 
     db.add(task)
-    await db.flush()  # get task.id before LS call
+    try:
+        await db.flush()  # get task.id before LS call; validates FK constraints
+    except IntegrityError as exc:
+        await db.rollback()
+        detail = str(exc.orig)
+        if "episode_id" in detail or "ForeignKey" in type(exc.orig).__name__ or "ForeignKeyViolation" in detail:
+            raise HTTPException(status_code=422, detail="episode_id references a non-existent episode")
+        raise HTTPException(status_code=422, detail="Database integrity error")
 
-    # Create corresponding Label Studio task
-    stream_token = create_stream_token(body.episode_id)
-    data_url = f"{settings.gateway_url}/api/v1/stream/{body.episode_id}?token={stream_token}"
+    # Create corresponding Label Studio task (best-effort, episode_id may be absent)
+    if body.episode_id:
+        stream_token = create_stream_token(body.episode_id)
+        data_url = f"{settings.gateway_url}/api/v1/stream/{body.episode_id}?token={stream_token}"
+    else:
+        data_url = ""
     label_config = _DEFAULT_LABEL_CONFIG.get(body.type, _FALLBACK_LABEL_CONFIG)
 
     try:
