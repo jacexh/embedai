@@ -82,6 +82,14 @@ export function useCreateTask() {
   });
 }
 
+export function useSubmitTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => apiClient.post(`/tasks/${taskId}/submit`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+  });
+}
+
 export function useApproveTask() {
   const qc = useQueryClient();
   return useMutation({

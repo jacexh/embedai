@@ -139,7 +139,7 @@ def _task_out(task: AnnotationTask) -> dict:
     return {
         "id": str(task.id),
         "project_id": str(task.project_id),
-        "episode_id": None,  # resolved from dataset_version_id context
+        "episode_id": str(task.episode_id) if task.episode_id else None,
         "dataset_version_id": str(task.dataset_version_id) if task.dataset_version_id else None,
         "type": task.type,
         "guideline_url": task.guideline_url,
@@ -191,6 +191,7 @@ async def create_task(
     task.id = uuid.uuid4()
     task.project_id = project_id
     task.dataset_version_id = uuid.UUID(body.dataset_version_id) if body.dataset_version_id else None
+    task.episode_id = uuid.UUID(body.episode_id) if body.episode_id else None
     task.type = body.type
     task.guideline_url = body.guideline_url
     task.required_skills = body.required_skills

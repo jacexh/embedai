@@ -1,19 +1,29 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   useTasks,
   useAnnotatorsWithWorkload,
   useAssignTask,
+  useSubmitTask,
   type AnnotationTask,
   type UserWorkload,
 } from "@/api/tasks";
 import { Spinner } from "@/components/Spinner";
 import { toast } from "@/store/toast";
+import { useAuthStore } from "@/store/auth";
 
 // Backend status values (ADR H4)
 const STATUS_TABS = [
   { value: "created", label: "待分配" },
   { value: "assigned", label: "进行中" },
   { value: "submitted", label: "待审批" },
+  { value: "approved", label: "已通过" },
+  { value: "rejected", label: "已驳回" },
+];
+
+const ANNOTATOR_STATUS_TABS = [
+  { value: "assigned", label: "进行中" },
+  { value: "submitted", label: "已提交" },
   { value: "approved", label: "已通过" },
   { value: "rejected", label: "已驳回" },
 ];
@@ -96,7 +106,130 @@ function AssignModal({
   );
 }
 
-export function TasksPage() {
+// ---------------------------------------------------------------------------
+// Annotator view: shows tasks assigned to current user with submit action
+// ---------------------------------------------------------------------------
+
+function AnnotatorTasksView({ userId }: { userId: string }) {
+  const [activeTab, setActiveTab] = useState("assigned");
+  const { data: tasks = [], isLoading } = useTasks({ status: activeTab, assigned_to: userId });
+  const submitTask = useSubmitTask();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (taskId: string) => {
+    try {
+      await submitTask.mutateAsync(taskId);
+      toast.success("任务已提交，等待审核");
+    } catch {
+      // error toast shown by apiClient interceptor
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">我的标注任务</h1>
+
+      <div className="flex border-b border-gray-200 mb-4">
+        {ANNOTATOR_STATUS_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setActiveTab(tab.value)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.value
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <Spinner />
+      ) : tasks.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-lg">暂无{STATUS_LABELS[activeTab] ?? ""}任务</p>
+          <p className="text-sm mt-1">请联系工程师分配任务</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tasks.map((task) => (
+            <div
+              key={task.id}
+              className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      STATUS_COLORS[task.status] ?? "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {STATUS_LABELS[task.status] ?? task.status}
+                  </span>
+                  <span className="text-xs text-gray-500">{task.type}</span>
+                </div>
+                <p className="font-mono text-xs text-gray-600 truncate">
+                  {task.dataset_version_id ?? task.episode_id ?? task.id}
+                </p>
+                {task.deadline && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    截止：{new Date(task.deadline).toLocaleDateString("zh-CN")}
+                  </p>
+                )}
+                {task.guideline_url && (
+                  <a
+                    href={task.guideline_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-600 hover:underline mt-1 inline-block"
+                  >
+                    查看标注指南 →
+                  </a>
+                )}
+              </div>
+              <div className="ml-4 shrink-0 flex flex-col gap-2 items-end">
+                {task.episode_id && (
+                  <button
+                    onClick={() => navigate(`/preview/${task.episode_id}`)}
+                    className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                  >
+                    查看数据
+                  </button>
+                )}
+                {task.status === "assigned" && (
+                  <button
+                    onClick={() => handleSubmit(task.id)}
+                    disabled={submitTask.isPending}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {submitTask.isPending ? "提交中..." : "提交标注"}
+                  </button>
+                )}
+                {task.status === "rejected" && (
+                  <button
+                    onClick={() => handleSubmit(task.id)}
+                    disabled={submitTask.isPending}
+                    className="px-4 py-2 text-sm bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {submitTask.isPending ? "提交中..." : "重新提交"}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Engineer/Admin view: task management with assignment
+// ---------------------------------------------------------------------------
+
+function ManagementTasksView() {
   const [activeTab, setActiveTab] = useState("created");
   const [assigningTask, setAssigningTask] = useState<AnnotationTask | null>(null);
 
@@ -232,4 +365,19 @@ export function TasksPage() {
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Entry point: route to appropriate view based on role
+// ---------------------------------------------------------------------------
+
+export function TasksPage() {
+  const user = useAuthStore((s) => s.user);
+  const isAnnotator = user?.role?.startsWith("annotator") ?? false;
+
+  if (isAnnotator && user) {
+    return <AnnotatorTasksView userId={user.id} />;
+  }
+
+  return <ManagementTasksView />;
 }

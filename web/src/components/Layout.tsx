@@ -1,16 +1,17 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuthStore } from "@/store/auth";
 
-const NAV_ITEMS = [
-  { to: "/episodes", label: "数据录制" },
-  { to: "/upload", label: "上传" },
-  { to: "/tasks", label: "标注任务" },
-  { to: "/datasets", label: "数据集" },
-  { to: "/export", label: "导出" },
-];
-
 export function Layout() {
   const { user, logout } = useAuthStore();
+  const isAnnotator = user?.role?.startsWith("annotator") ?? false;
+
+  const NAV_ITEMS = [
+    { to: "/episodes", label: "数据录制" },
+    ...(!isAnnotator ? [{ to: "/upload", label: "上传" }] : []),
+    { to: "/tasks", label: isAnnotator ? "我的任务" : "标注任务" },
+    ...(!isAnnotator ? [{ to: "/datasets", label: "数据集" }] : []),
+    ...(!isAnnotator ? [{ to: "/export", label: "导出" }] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

@@ -82,6 +82,9 @@ class AnnotationTask(Base):
     dataset_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("dataset_versions.id")
     )
+    episode_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("episodes.id")
+    )
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     guideline_url: Mapped[str | None] = mapped_column(String(500))
     required_skills: Mapped[list] = mapped_column(JSONB, default=list)
